@@ -1,96 +1,346 @@
-// src/screens/LibraryScreen.js
-import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActionSheetIOS, Platform, Modal, Pressable } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Header from '../components/Header';
 import { Ionicons } from '@expo/vector-icons';
-// import PaperItem from '../components/PaperItem'; // Will update this later
+import * as FileSystem from 'expo-file-system';
+import PaperItem from '../components/PaperItem';
+import { useFocusEffect } from '@react-navigation/native';
 
 const LibraryScreen = ({ navigation }) => {
-  const papers = [
-    {
-      id: '1',
-      title: 'Uses of the real Biomedical Image Analysis: A Survey',
-      authors: 'Jiawei Chen, Emily Zhang, Michael Wu',
-      source: 'Nature',
-      year: '2023',
-      pages: '32 pages',
-      tag: 'Open Access',
-      tagColor: '#2ecc71',
-    },
-    {
-      id: '2',
-      title: 'Advances in Block and Bar Graphs: A Review',
-      authors: 'Ankit Kumar, Sarah Lee',
-      source: 'IEEE',
-      year: '2022',
-      pages: '18 pages',
-      tag: 'PDF',
-      tagColor: '#f4d03f',
-    },
-    {
-      id: '3',
-      title: 'What if humans had tails: A Comprehensive Survey',
-      authors: 'Zara Patel, Ivan Popov',
-      source: 'arXiv',
-      year: '2024',
-      pages: '45 pages',
-      tag: 'Cited',
-      tagColor: '#2980ef',
-    },
-  ];
+  const [activeFilter, setActiveFilter] = useState('All');
+  const [papers, setPapers] = useState([]);
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [moveModalVisible, setMoveModalVisible] = useState(false);
+  const [collections, setCollections] = useState(['Default', 'Research', 'Favorites']);
 
   const filters = [
-    { label: 'All', active: true },
+    { label: 'All' },
     { label: 'Recent' },
     { label: 'Read' },
     { label: 'Unread' },
     { label: 'Cited' },
+    { label: 'PDF' },
+    { label: 'Open Access' },
   ];
+
+  // Load papers from AsyncStorage when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadPapers = async () => {
+        try {
+          const savedPapers = await AsyncStorage.getItem('papers');
+          if (savedPapers) {
+            setPapers(JSON.parse(savedPapers));
+          }
+        } catch (error) {
+          Alert.alert('Error', 'Failed to load papers.');
+        }
+      };
+      loadPapers();
+    }, [])
+  );
+
+  // Save papers to AsyncStorage
+  useEffect(() => {
+    const savePapers = async () => {
+      try {
+        await AsyncStorage.setItem('papers', JSON.stringify(papers));
+      } catch (error) {
+        Alert.alert('Error', 'Failed to save papers.');
+      }
+    };
+    if (papers.length > 0) {
+      savePapers();
+    }
+  }, [papers]);
+
+  // Filtering logic
+  const filteredPapers = papers.filter(paper => {
+    if (activeFilter === 'All') return true;
+    if (activeFilter === 'Cited') return paper.tag === 'Cited';
+    if (activeFilter === 'PDF') return paper.tag === 'PDF';
+    if (activeFilter === 'Open Access') return paper.tag === 'Open Access';
+    if (activeFilter === 'Recent') {
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      return new Date(paper.addedDate) >= oneWeekAgo;
+    }
+    if (activeFilter === 'Read') return paper.readStatus === 'Read';
+    if (activeFilter === 'Unread') return paper.readStatus === 'Unread';
+    return false;
+  });
+
+  // Toggle star handler
+  const toggleStar = id => {
+    setPapers(prevPapers =>
+      prevPapers.map(paper =>
+        paper.id === id ? { ...paper, starred: !paper.starred } : paper
+      )
+    );
+  };
+
+  // Toggle read status
+  const toggleReadStatus = id => {
+    setPapers(prevPapers =>
+      prevPapers.map(paper =>
+        paper.id === id
+          ? { ...paper, readStatus: paper.readStatus === 'Read' ? 'Unread' : 'Read' }
+          : paper
+      )
+    );
+  };
+
+  // Download handler
+  const handleDownload = async item => {
+    try {
+      if (!item.pdfUrl && !item.localUri) {
+        Alert.alert('Error', 'No PDF available for this paper.');
+        return;
+      }
+
+      // If it's already downloaded locally, no need to download again
+      if (item.localUri) {
+        Alert.alert('Info', 'PDF is already downloaded.');
+        return;
+      }
+
+      const fileUri = `${FileSystem.documentDirectory}${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+      const downloadResumable = FileSystem.createDownloadResumable(
+        item.pdfUrl,
+        fileUri,
+        {},
+        (downloadProgress) => {
+          const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+          console.log(`Download progress: ${progress * 100}%`);
+        }
+      );
+
+      const { uri } = await downloadResumable.downloadAsync();
+      setPapers(prevPapers =>
+        prevPapers.map(paper =>
+          paper.id === item.id ? { ...paper, localUri: uri } : paper
+        )
+      );
+      Alert.alert('Success', 'PDF downloaded successfully!');
+    } catch (error) {
+      Alert.alert('Download Failed', error.message);
+    }
+  };
+
+  // Open PDF handler
+  const handleOpenPDF = async item => {
+    try {
+      if (!item.pdfUrl && !item.localUri) {
+        Alert.alert('Error', 'No PDF available for this paper.');
+        return;
+      }
+
+      let uri = item.localUri;
+      if (!uri) {
+        const fileUri = `${FileSystem.documentDirectory}${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        
+        if (!fileInfo.exists) {
+          // Download the PDF if it's not already downloaded
+          const downloadResumable = FileSystem.createDownloadResumable(item.pdfUrl, fileUri);
+          const result = await downloadResumable.downloadAsync();
+          uri = result.uri;
+          setPapers(prevPapers =>
+            prevPapers.map(paper =>
+              paper.id === item.id ? { ...paper, localUri: uri } : paper
+            )
+          );
+        } else {
+          uri = fileUri;
+        }
+      }
+
+      navigation.navigate('PDFViewer', { uri, title: item.title });
+      setPapers(prevPapers =>
+        prevPapers.map(paper =>
+          paper.id === item.id ? { ...paper, readStatus: 'Read' } : paper
+        )
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open PDF: ' + error.message);
+    }
+  };
+
+  // More handler
+  const handleMore = item => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Details', 'Move', 'Delete', 'Mark as Read/Unread'],
+          destructiveButtonIndex: 3,
+          cancelButtonIndex: 0,
+          title: item.title,
+        },
+        buttonIndex => {
+          if (buttonIndex === 1) {
+            setSelectedPaper(item);
+            setDetailsModalVisible(true);
+          }
+          if (buttonIndex === 2) {
+            setSelectedPaper(item);
+            setMoveModalVisible(true);
+          }
+          if (buttonIndex === 3) handleDelete(item.id);
+          if (buttonIndex === 4) toggleReadStatus(item.id);
+        }
+      );
+    } else {
+      Alert.alert(
+        item.title,
+        '',
+        [
+          {
+            text: 'Details',
+            onPress: () => {
+              setSelectedPaper(item);
+              setDetailsModalVisible(true);
+            },
+          },
+          {
+            text: 'Move',
+            onPress: () => {
+              setSelectedPaper(item);
+              setMoveModalVisible(true);
+            },
+          },
+          { text: 'Delete', onPress: () => handleDelete(item.id), style: 'destructive' },
+          {
+            text: item.readStatus === 'Read' ? 'Mark as Unread' : 'Mark as Read',
+            onPress: () => toggleReadStatus(item.id),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    }
+  };
+
+  // Delete handler
+  const handleDelete = id => {
+    setPapers(prevPapers => prevPapers.filter(paper => paper.id !== id));
+  };
+
+  // Move to collection
+  const handleMoveToCollection = collection => {
+    setPapers(prevPapers =>
+      prevPapers.map(paper =>
+        paper.id === selectedPaper.id ? { ...paper, collection } : paper
+      )
+    );
+    setMoveModalVisible(false);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fafbfc' }}>
       <Header />
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>My Library</Text>
-        <TouchableOpacity style={styles.addButton}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate('AddPaper', { setPapers })}
+        >
           <Ionicons name="add" size={18} color="#4f5ef7" />
           <Text style={styles.addButtonText}>Add Paper</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.filterBar}>
-        {filters.map((filter, idx) => (
+        {filters.map(filter => (
           <TouchableOpacity
             key={filter.label}
-            style={[styles.filterChip, filter.active && styles.filterChipActive]}
+            style={[styles.filterChip, activeFilter === filter.label && styles.filterChipActive]}
+            onPress={() => setActiveFilter(filter.label)}
           >
-            <Text style={[styles.filterText, filter.active && styles.filterTextActive]}>{filter.label}</Text>
+            <Text style={[styles.filterText, activeFilter === filter.label && styles.filterTextActive]}>
+              {filter.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
-      {/* Placeholder for paper cards */}
       <FlatList
-        data={papers}
+        data={filteredPapers}
         renderItem={({ item }) => (
-          <View style={styles.paperCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-              <View style={[styles.tag, { backgroundColor: item.tagColor || '#eee' }]}> 
-                <Text style={styles.tagText}>{item.tag}</Text>
-              </View>
-              <Text style={styles.yearText}>{item.year}</Text>
-            </View>
-            <Text style={styles.paperTitle}>{item.title}</Text>
-            <Text style={styles.paperAuthors}>{item.authors}</Text>
-            <Text style={styles.paperSource}>{item.source} | {item.pages}</Text>
-            <View style={styles.iconRow}>
-              <Ionicons name="star-outline" size={20} color="#aaa" style={{ marginRight: 16 }} />
-              <Ionicons name="download-outline" size={20} color="#aaa" style={{ marginRight: 16 }} />
-              <Ionicons name="ellipsis-horizontal" size={20} color="#aaa" />
-            </View>
-          </View>
+          <PaperItem
+            item={item}
+            onPress={() => handleOpenPDF(item)}
+            onStar={() => toggleStar(item.id)}
+            onDownload={() => handleDownload(item)}
+            onMore={() => handleMore(item)}
+          />
         )}
         keyExtractor={item => item.id}
         contentContainerStyle={{ paddingBottom: 16 }}
       />
+      <Modal
+        visible={detailsModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setDetailsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Paper Details</Text>
+            {selectedPaper && (
+              <>
+                <Text style={styles.modalLabel}>Title:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.title}</Text>
+                <Text style={styles.modalLabel}>Authors:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.authors}</Text>
+                <Text style={styles.modalLabel}>Source:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.source}</Text>
+                <Text style={styles.modalLabel}>Year:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.year}</Text>
+                <Text style={styles.modalLabel}>Pages:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.pages}</Text>
+                <Text style={styles.modalLabel}>Tag:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.tag}</Text>
+                <Text style={styles.modalLabel}>Collection:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.collection}</Text>
+                <Text style={styles.modalLabel}>DOI:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.doi || 'N/A'}</Text>
+              </>
+            )}
+            <Pressable style={styles.modalCloseButton} onPress={() => setDetailsModalVisible(false)}>
+              <Text style={styles.modalCloseButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={moveModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setMoveModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Move Paper</Text>
+            {selectedPaper && (
+              <>
+                <Text style={styles.modalLabel}>Title:</Text>
+                <Text style={styles.modalValue}>{selectedPaper.title}</Text>
+                <Text style={styles.modalLabel}>Move to Collection:</Text>
+                {collections.map(collection => (
+                  <TouchableOpacity
+                    key={collection}
+                    style={styles.collectionButton}
+                    onPress={() => handleMoveToCollection(collection)}
+                  >
+                    <Text style={styles.collectionButtonText}>{collection}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+            <Pressable style={styles.modalCloseButton} onPress={() => setMoveModalVisible(false)}>
+              <Text style={styles.modalCloseButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -139,58 +389,66 @@ const styles = StyleSheet.create({
     backgroundColor: '#4f5ef7',
   },
   filterText: {
-    color: '#888',
+    color: 'gray',
     fontWeight: '500',
   },
   filterTextActive: {
     color: '#fff',
   },
-  paperCard: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 14,
-    marginHorizontal: 12,
-    marginVertical: 8,
-    padding: 16,
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  tag: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 8,
-  },
-  tagText: {
-    color: '#fff',
+  modalTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
-    fontSize: 12,
-  },
-  yearText: {
-    color: '#888',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  paperTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    marginBottom: 12,
     color: '#222',
-    marginBottom: 4,
+    textAlign: 'center',
   },
-  paperAuthors: {
-    color: '#444',
-    fontSize: 14,
+  modalLabel: {
+    fontWeight: 'bold',
+    color: '#4f5ef7',
+    marginTop: 8,
+  },
+  modalValue: {
+    color: '#222',
     marginBottom: 2,
   },
-  paperSource: {
-    color: '#aaa',
-    fontSize: 13,
-    marginBottom: 8,
+  modalCloseButton: {
+    marginTop: 18,
+    backgroundColor: '#4f5ef7',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
   },
-  iconRow: {
-    flexDirection: 'row',
-    marginTop: 4,
+  modalCloseButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  collectionButton: {
+    backgroundColor: '#e7eaff',
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  collectionButtonText: {
+    color: '#4f5ef7',
+    fontWeight: '500',
   },
 });
 

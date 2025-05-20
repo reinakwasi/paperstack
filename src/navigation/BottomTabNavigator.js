@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import LibraryScreen from '../screens/LibraryScreen';
 import SearchScreen from '../screens/SearchScreen';
+
 import FavoritesScreen from '../screens/FavoritesScreen';
 import FolderScreen from '../screens/FolderScreen';
 import ProfileScreen from '../screens/ProfileScreen';
