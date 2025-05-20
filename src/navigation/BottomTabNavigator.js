@@ -14,6 +14,8 @@ export default function BottomTabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
+        // This hides the header for all tab screens
+        headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
           if (route.name === 'Library') {
