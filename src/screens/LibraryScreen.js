@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActionSheetIOS, Platform, Modal, Pressable } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActionSheetIOS, Platform, Modal, Pressable, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Header from '../components/Header';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,12 +8,13 @@ import PaperItem from '../components/PaperItem';
 import { useFocusEffect } from '@react-navigation/native';
 
 const LibraryScreen = ({ navigation }) => {
-  const [activeFilter, setActiveFilter] = useState('All');
+  const [activeFilter, setActiveFilter] = useState('recent');
   const [papers, setPapers] = useState([]);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [moveModalVisible, setMoveModalVisible] = useState(false);
   const [collections, setCollections] = useState(['Default', 'Research', 'Favorites']);
+  const [loading, setLoading] = useState(true);
 
   const filters = [
     { label: 'All' },
@@ -32,10 +33,15 @@ const LibraryScreen = ({ navigation }) => {
         try {
           const savedPapers = await AsyncStorage.getItem('papers');
           if (savedPapers) {
-            setPapers(JSON.parse(savedPapers));
+            const parsedPapers = JSON.parse(savedPapers);
+            // Sort papers by date added (most recent first)
+            const sortedPapers = parsedPapers.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+            setPapers(sortedPapers);
           }
         } catch (error) {
-          Alert.alert('Error', 'Failed to load papers.');
+          console.error('Error loading papers:', error);
+        } finally {
+          setLoading(false);
         }
       };
       loadPapers();
@@ -57,19 +63,20 @@ const LibraryScreen = ({ navigation }) => {
   }, [papers]);
 
   // Filtering logic
-  const filteredPapers = papers.filter(paper => {
-    if (activeFilter === 'All') return true;
-    if (activeFilter === 'Cited') return paper.tag === 'Cited';
-    if (activeFilter === 'PDF') return paper.tag === 'PDF';
-    if (activeFilter === 'Open Access') return paper.tag === 'Open Access';
-    if (activeFilter === 'Recent') {
-      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      return new Date(paper.addedDate) >= oneWeekAgo;
+  const getFilteredPapers = () => {
+    switch (activeFilter) {
+      case 'recent':
+        return papers.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+      case 'read':
+        return papers.filter(paper => paper.readStatus?.toLowerCase() === 'read');
+      case 'unread':
+        return papers.filter(paper => !paper.readStatus || paper.readStatus.toLowerCase() === 'unread');
+      case 'cited':
+        return papers.filter(paper => paper.citationCount > 0);
+      default:
+        return papers;
     }
-    if (activeFilter === 'Read') return paper.readStatus === 'Read';
-    if (activeFilter === 'Unread') return paper.readStatus === 'Unread';
-    return false;
-  });
+  };
 
   // Toggle star handler
   const toggleStar = id => {
@@ -85,7 +92,7 @@ const LibraryScreen = ({ navigation }) => {
     setPapers(prevPapers =>
       prevPapers.map(paper =>
         paper.id === id
-          ? { ...paper, readStatus: paper.readStatus === 'Read' ? 'Unread' : 'Read' }
+          ? { ...paper, readStatus: paper.readStatus === 'read' ? null : 'read' }
           : paper
       )
     );
@@ -94,18 +101,14 @@ const LibraryScreen = ({ navigation }) => {
   // Download handler
   const handleDownload = async item => {
     try {
-      if (!item.pdfUrl && !item.localUri) {
-        Alert.alert('Error', 'No PDF available for this paper.');
+      if (!item.pdfUrl) {
+        Alert.alert('Error', 'No PDF URL available for this paper.');
         return;
       }
 
-      // If it's already downloaded locally, no need to download again
-      if (item.localUri) {
-        Alert.alert('Info', 'PDF is already downloaded.');
-        return;
-      }
-
-      const fileUri = `${FileSystem.documentDirectory}${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+      const fileName = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      
       const downloadResumable = FileSystem.createDownloadResumable(
         item.pdfUrl,
         fileUri,
@@ -117,14 +120,17 @@ const LibraryScreen = ({ navigation }) => {
       );
 
       const { uri } = await downloadResumable.downloadAsync();
-      setPapers(prevPapers =>
-        prevPapers.map(paper =>
-          paper.id === item.id ? { ...paper, localUri: uri } : paper
-        )
+      
+      // Update the paper's localUri in the state
+      const updatedPapers = papers.map(paper => 
+        paper.id === item.id ? { ...paper, localUri: uri } : paper
       );
+      setPapers(updatedPapers);
+      await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+      
       Alert.alert('Success', 'PDF downloaded successfully!');
     } catch (error) {
-      Alert.alert('Download Failed', error.message);
+      Alert.alert('Error', 'Failed to download PDF: ' + error.message);
     }
   };
 
@@ -136,32 +142,41 @@ const LibraryScreen = ({ navigation }) => {
         return;
       }
 
-      let uri = item.localUri;
-      if (!uri) {
-        const fileUri = `${FileSystem.documentDirectory}${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
-        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      let uriToOpen = item.localUri;
+      if (!uriToOpen && item.pdfUrl) {
+        // If no local copy exists, download it
+        const fileName = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+        const fileUri = `${FileSystem.documentDirectory}${fileName}`;
         
-        if (!fileInfo.exists) {
-          // Download the PDF if it's not already downloaded
-          const downloadResumable = FileSystem.createDownloadResumable(item.pdfUrl, fileUri);
-          const result = await downloadResumable.downloadAsync();
-          uri = result.uri;
-          setPapers(prevPapers =>
-            prevPapers.map(paper =>
-              paper.id === item.id ? { ...paper, localUri: uri } : paper
-            )
-          );
-        } else {
-          uri = fileUri;
-        }
+        const downloadResumable = FileSystem.createDownloadResumable(
+          item.pdfUrl,
+          fileUri,
+          {},
+          (downloadProgress) => {
+            const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+            console.log(`Download progress: ${progress * 100}%`);
+          }
+        );
+
+        const { uri } = await downloadResumable.downloadAsync();
+        uriToOpen = uri;
+
+        // Update the paper's localUri in the state
+        const updatedPapers = papers.map(paper => 
+          paper.id === item.id ? { ...paper, localUri: uri } : paper
+        );
+        setPapers(updatedPapers);
+        await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
       }
 
-      navigation.navigate('PDFViewer', { uri, title: item.title });
-      setPapers(prevPapers =>
-        prevPapers.map(paper =>
-          paper.id === item.id ? { ...paper, readStatus: 'Read' } : paper
-        )
+      // Mark the paper as read when opening it
+      const updatedPapers = papers.map(paper => 
+        paper.id === item.id ? { ...paper, readStatus: 'read' } : paper
       );
+      setPapers(updatedPapers);
+      await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+
+      navigation.navigate('PDFViewer', { uri: uriToOpen, title: item.title });
     } catch (error) {
       Alert.alert('Error', 'Failed to open PDF: ' + error.message);
     }
@@ -172,7 +187,7 @@ const LibraryScreen = ({ navigation }) => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Cancel', 'Details', 'Move', 'Delete', 'Mark as Read/Unread'],
+          options: ['Cancel', 'Details', 'Move', 'Delete', item.readStatus === 'read' ? 'Mark as Unread' : 'Mark as Read'],
           destructiveButtonIndex: 3,
           cancelButtonIndex: 0,
           title: item.title,
@@ -211,7 +226,7 @@ const LibraryScreen = ({ navigation }) => {
           },
           { text: 'Delete', onPress: () => handleDelete(item.id), style: 'destructive' },
           {
-            text: item.readStatus === 'Read' ? 'Mark as Unread' : 'Mark as Read',
+            text: item.readStatus === 'read' ? 'Mark as Unread' : 'Mark as Read',
             onPress: () => toggleReadStatus(item.id),
           },
           { text: 'Cancel', style: 'cancel' },
@@ -235,6 +250,25 @@ const LibraryScreen = ({ navigation }) => {
     setMoveModalVisible(false);
   };
 
+  const renderFilterButton = (filter, label) => (
+    <TouchableOpacity
+      style={[styles.filterButton, activeFilter === filter && styles.activeFilterButton]}
+      onPress={() => setActiveFilter(filter)}
+    >
+      <Text style={[styles.filterButtonText, activeFilter === filter && styles.activeFilterButtonText]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4f5ef7" />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fafbfc' }}>
       <Header />
@@ -242,27 +276,20 @@ const LibraryScreen = ({ navigation }) => {
         <Text style={styles.sectionTitle}>My Library</Text>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => navigation.navigate('AddPaper', { setPapers })}
+          onPress={() => navigation.navigate('AddPaper')}
         >
           <Ionicons name="add" size={18} color="#4f5ef7" />
           <Text style={styles.addButtonText}>Add Paper</Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.filterBar}>
-        {filters.map(filter => (
-          <TouchableOpacity
-            key={filter.label}
-            style={[styles.filterChip, activeFilter === filter.label && styles.filterChipActive]}
-            onPress={() => setActiveFilter(filter.label)}
-          >
-            <Text style={[styles.filterText, activeFilter === filter.label && styles.filterTextActive]}>
-              {filter.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <View style={styles.filterContainer}>
+        {renderFilterButton('recent', 'Recent')}
+        {renderFilterButton('read', 'Read')}
+        {renderFilterButton('unread', 'Unread')}
+        {renderFilterButton('cited', 'Cited')}
       </View>
       <FlatList
-        data={filteredPapers}
+        data={getFilteredPapers()}
         renderItem={({ item }) => (
           <PaperItem
             item={item}
@@ -373,26 +400,28 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontSize: 14,
   },
-  filterBar: {
+  filterContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  filterChip: {
-    backgroundColor: '#f2f2f2',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     marginRight: 8,
+    backgroundColor: '#f5f5f5',
   },
-  filterChipActive: {
+  activeFilterButton: {
     backgroundColor: '#4f5ef7',
   },
-  filterText: {
-    color: 'gray',
-    fontWeight: '500',
+  filterButtonText: {
+    color: '#666',
+    fontWeight: '600',
   },
-  filterTextActive: {
+  activeFilterButtonText: {
     color: '#fff',
   },
   modalOverlay: {
@@ -449,6 +478,11 @@ const styles = StyleSheet.create({
   collectionButtonText: {
     color: '#4f5ef7',
     fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

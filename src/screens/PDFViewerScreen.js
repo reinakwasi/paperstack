@@ -15,21 +15,52 @@ const PDFViewerScreen = ({ navigation, route }) => {
   useEffect(() => {
     const loadPDF = async () => {
       try {
-        // Check if it's a local file
+        // Check if file exists before reading
+        const fileInfo = await FileSystem.getInfoAsync(uri);
         if (uri.startsWith('file://') || uri.startsWith(FileSystem.documentDirectory)) {
+          if (!fileInfo.exists) {
+            setError('Missing PDF file. The file does not exist at the expected location.');
+            return;
+          }
           // Read the file as base64
           const base64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
           setPdfBase64(base64);
+        } else {
+          // For remote URLs, download the file first
+          const fileName = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.pdf`;
+          const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+          
+          const downloadResumable = FileSystem.createDownloadResumable(
+            uri,
+            fileUri,
+            {},
+            (downloadProgress) => {
+              const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+              console.log(`Download progress: ${progress * 100}%`);
+            }
+          );
+
+          const { uri: localUri } = await downloadResumable.downloadAsync();
+          const localFileInfo = await FileSystem.getInfoAsync(localUri);
+          if (!localFileInfo.exists) {
+            setError('Failed to download PDF. The file does not exist.');
+            return;
+          }
+          const base64 = await FileSystem.readAsStringAsync(localUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          setPdfBase64(base64);
         }
       } catch (error) {
+        console.error('PDF loading error:', error);
         setError('Failed to load PDF: ' + error.message);
       }
     };
 
     loadPDF();
-  }, [uri]);
+  }, [uri, title]);
 
   const handleLoadEnd = () => {
     setLoading(false);
@@ -140,6 +171,18 @@ const PDFViewerScreen = ({ navigation, route }) => {
               font-weight: 600;
               z-index: 1000;
             }
+            .error-container {
+              color: white;
+              text-align: center;
+              padding: 20px;
+              font-family: Arial, sans-serif;
+            }
+            .error-container a {
+              color: #4f5ef7;
+              text-decoration: none;
+              margin-top: 10px;
+              display: inline-block;
+            }
           </style>
         </head>
         <body>
@@ -151,7 +194,6 @@ const PDFViewerScreen = ({ navigation, route }) => {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             
             let pdfDoc = null;
-            window.zoomScale = ${scale};
             let currentScale = ${scale};
             let startDistance = 0;
             let startScale = ${scale};
@@ -192,7 +234,7 @@ const PDFViewerScreen = ({ navigation, route }) => {
             function updatePageCounter() {
               const counter = document.getElementById('page-counter');
               if (counter) {
-                counter.textContent = \`Page \${currentPage} of \${totalPages}\`;
+                counter.textContent = "Page " + currentPage + " of " + totalPages;
               }
             }
 
@@ -269,7 +311,7 @@ const PDFViewerScreen = ({ navigation, route }) => {
                 // Update the page counter immediately after loading
                 const counter = document.getElementById('page-counter');
                 if (counter) {
-                  counter.textContent = \`Page 1 of \${totalPages}\`;
+                  counter.textContent = "Page 1 of " + totalPages;
                 }
                 
                 await renderPDF();
@@ -285,9 +327,9 @@ const PDFViewerScreen = ({ navigation, route }) => {
                 viewer.addEventListener('scroll', handleScroll);
               } catch (error) {
                 document.getElementById('viewer').innerHTML = 
-                  '<div style="color: white; text-align: center; padding: 20px;">' +
+                  '<div class="error-container">' +
                   'Error loading PDF: ' + error.message + '<br>' +
-                  '<a href="${pdfData}" style="color: #4f5ef7;">Download PDF</a>' +
+                  '<a href="${pdfData}" target="_blank">Download PDF</a>' +
                   '</div>';
               }
             }

@@ -26,7 +26,7 @@ const PaperItem = ({ item, onPress, onStar, onDownload, onMore }) => {
           <Text style={styles.type}>{item.tag}</Text>
         </View>
         <Text style={styles.year}>{item.year}</Text>
-        {item.readStatus === 'Read' && (
+        {item.readStatus?.toLowerCase() === 'read' && (
           <View style={styles.readBadge}>
             <Text style={styles.readText}>Read</Text>
           </View>

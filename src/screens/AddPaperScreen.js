@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, FlatList } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 
 const AddPaperScreen = ({ navigation, route }) => {
   const [importMethod, setImportMethod] = useState(0);
@@ -16,6 +17,9 @@ const AddPaperScreen = ({ navigation, route }) => {
   const [collection, setCollection] = useState('All Papers');
   const [pdfFile, setPdfFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const importMethods = [
     { icon: 'file-upload-outline', label: 'Upload PDF' },
@@ -24,6 +28,181 @@ const AddPaperScreen = ({ navigation, route }) => {
   ];
 
   const collections = ['All Papers', 'Favorites', 'Recent Reads', 'Work', 'Research'];
+
+  // Search papers using CrossRef and arXiv
+  const searchPapers = async (query) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const results = [];
+      
+      // Search CrossRef with timeout and error handling
+      try {
+        const crossrefResponse = await Promise.race([
+          fetch(
+            `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=10&select=DOI,title,author,published-print,container-title,URL`
+          ),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('CrossRef request timeout')), 5000)
+          )
+        ]);
+
+        if (!crossrefResponse.ok) {
+          throw new Error(`CrossRef API error: ${crossrefResponse.status}`);
+        }
+
+        const crossrefData = await crossrefResponse.json();
+
+        if (crossrefData.message.items) {
+          results.push(...crossrefData.message.items.map(item => ({
+            id: item.DOI,
+            title: item.title?.[0] || 'Untitled',
+            authors: item.author?.map(a => `${a.given} ${a.family}`).join(', ') || 'Unknown',
+            journal: item['container-title']?.[0] || 'Unknown Journal',
+            year: item['published-print']?.['date-parts']?.[0]?.[0]?.toString() || 'Unknown',
+            doi: item.DOI,
+            source: 'CrossRef',
+            pdfUrl: item.URL
+          })));
+        }
+      } catch (crossrefError) {
+        console.warn('CrossRef search failed:', crossrefError);
+        // Continue with arXiv search even if CrossRef fails
+      }
+
+      // Search arXiv with timeout and error handling
+      try {
+        const arxivResponse = await Promise.race([
+          fetch(
+            `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=10&sortBy=relevance&sortOrder=descending`
+          ),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('arXiv request timeout')), 5000)
+          )
+        ]);
+
+        if (!arxivResponse.ok) {
+          throw new Error(`arXiv API error: ${arxivResponse.status}`);
+        }
+
+        const arxivData = await arxivResponse.text();
+
+        // Simple text parsing for arXiv results
+        const entries = arxivData.split('<entry>').slice(1);
+        entries.forEach((entry, index) => {
+          const idMatch = entry.match(/<id>(.*?)<\/id>/);
+          const titleMatch = entry.match(/<title>(.*?)<\/title>/);
+          const authorsMatch = entry.match(/<author>.*?<name>(.*?)<\/name>.*?<\/author>/g);
+          const publishedMatch = entry.match(/<published>(.*?)<\/published>/);
+
+          const id = idMatch ? idMatch[1] : `arxiv-${index}`;
+          const title = titleMatch ? titleMatch[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>') : 'Untitled';
+          const authors = authorsMatch ? authorsMatch.map(a => a.match(/<name>(.*?)<\/name>/)[1]).join(', ') : 'Unknown';
+          const published = publishedMatch ? publishedMatch[1] : null;
+          
+          // Extract arXiv ID and construct proper PDF URL
+          let pdfUrl = null;
+          if (idMatch) {
+            const arxivId = idMatch[1].split('/').pop();
+            pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+          }
+
+          results.push({
+            id,
+            title,
+            authors,
+            journal: 'arXiv',
+            year: published ? new Date(published).getFullYear().toString() : 'Unknown',
+            source: 'arXiv',
+            pdfUrl
+          });
+        });
+      } catch (arxivError) {
+        console.warn('arXiv search failed:', arxivError);
+        // Continue with results from CrossRef even if arXiv fails
+      }
+
+      if (results.length === 0) {
+        Alert.alert('No Results', 'No papers found matching your search query.');
+      }
+
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      Alert.alert('Search Error', 'Failed to search papers. Please check your internet connection and try again.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle paper selection from search results
+  const handlePaperSelect = async (paper) => {
+    setTitle(paper.title);
+    setAuthors(paper.authors);
+    setJournal(paper.journal);
+    setYear(paper.year);
+    setDoi(paper.doi || '');
+    
+    if (paper.pdfUrl) {
+      try {
+        // For arXiv papers, ensure we're using the correct PDF URL
+        if (paper.source === 'arXiv') {
+          const arxivId = paper.id.split('/').pop();
+          paper.pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+        }
+        
+        setPdfFile({ uri: paper.pdfUrl, name: `${paper.title}.pdf` });
+      } catch (error) {
+        console.error('Error setting PDF file:', error);
+        Alert.alert('Error', 'Failed to set PDF file: ' + error.message);
+      }
+    }
+    setSearchResults([]);
+  };
+
+  // Handle DOI lookup
+  const handleDoiLookup = async () => {
+    if (!doi) {
+      Alert.alert('Error', 'Please enter a DOI');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`https://api.crossref.org/works/${doi}`);
+      if (!response.ok) {
+        throw new Error('DOI not found');
+      }
+
+      const data = await response.json();
+      const work = data.message;
+
+      // Update form fields with fetched data
+      setTitle(work.title?.[0] || '');
+      setAuthors(work.author?.map(a => `${a.given} ${a.family}`).join(', ') || '');
+      setJournal(work['container-title']?.[0] || '');
+      setYear(work.published?.['date-parts']?.[0]?.[0]?.toString() || new Date().getFullYear().toString());
+
+      // If there's a PDF link, set it
+      if (work.link?.some(l => l.contentType === 'application/pdf')) {
+        const pdfLink = work.link.find(l => l.contentType === 'application/pdf');
+        if (pdfLink) {
+          setPdfFile({ uri: pdfLink.URL, name: `${work.title[0]}.pdf` });
+        }
+      }
+
+      Alert.alert('Success', 'Paper details fetched successfully');
+    } catch (error) {
+      console.error('DOI lookup error:', error);
+      Alert.alert('Error', 'Failed to fetch paper details: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle PDF selection
   const handlePickPDF = async () => {
@@ -56,19 +235,56 @@ const AddPaperScreen = ({ navigation, route }) => {
     try {
       let pdfUrl = null;
       let localUri = null;
+      let paperTag = null;
+      let paperTagColor = null;
       
-      // If PDF was selected, copy it to permanent storage
+      // If PDF was selected, handle it appropriately
       if (pdfFile) {
         const fileName = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.pdf`;
         const newPath = FileSystem.documentDirectory + fileName;
         
-        await FileSystem.copyAsync({
-          from: pdfFile.uri,
-          to: newPath,
-        });
-        
-        localUri = newPath;
-        pdfUrl = newPath; // Set both to ensure compatibility
+        // If the PDF is from a URL, download it first
+        if (pdfFile.uri.startsWith('http')) {
+          const downloadResumable = FileSystem.createDownloadResumable(
+            pdfFile.uri,
+            newPath,
+            {},
+            (downloadProgress) => {
+              const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+              console.log(`Download progress: ${progress * 100}%`);
+            }
+          );
+          
+          const { uri } = await downloadResumable.downloadAsync();
+          // Check if file exists after download
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (!fileInfo.exists) {
+            Alert.alert('Error', 'Failed to download PDF. The file does not exist.');
+            setIsSubmitting(false);
+            return;
+          }
+          // Check if file is a valid PDF
+          const fileContent = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8, length: 5 });
+          if (!fileContent.startsWith('%PDF-')) {
+            Alert.alert('Error', 'Downloaded file is not a valid PDF.');
+            setIsSubmitting(false);
+            return;
+          }
+          localUri = uri;
+          pdfUrl = pdfFile.uri;
+          paperTag = 'Remote';
+          paperTagColor = '#3498db';
+        } else {
+          // If it's a local file, just copy it
+          await FileSystem.copyAsync({
+            from: pdfFile.uri,
+            to: newPath,
+          });
+          localUri = newPath;
+          pdfUrl = newPath;
+          paperTag = 'Local';
+          paperTagColor = '#9b59b6';
+        }
       }
 
       // Create new paper object
@@ -79,10 +295,10 @@ const AddPaperScreen = ({ navigation, route }) => {
         source: journal || 'Unknown Journal',
         year: year || new Date().getFullYear().toString(),
         pages: 'Unknown',
-        tag: localUri ? 'Local' : (doi ? 'DOI' : 'Manual'),
-        tagColor: localUri ? '#9b59b6' : (doi ? '#3498db' : '#f39c12'),
+        tag: typeof paperTag !== 'undefined' ? paperTag : (doi ? 'DOI' : 'Manual'),
+        tagColor: typeof paperTagColor !== 'undefined' ? paperTagColor : (doi ? '#3498db' : '#f39c12'),
         starred: false,
-        readStatus: 'Unread',
+        readStatus: 'unread',
         pdfUrl,
         localUri,
         collection,
@@ -123,6 +339,178 @@ const AddPaperScreen = ({ navigation, route }) => {
     );
   };
 
+  const renderContent = () => (
+    <>
+      {/* Import Method */}
+      <Text style={styles.sectionLabel}>Import Method</Text>
+      <View style={styles.importRow}>
+        {importMethods.map((m, idx) => (
+          <TouchableOpacity
+            key={m.label}
+            style={[styles.importButton, importMethod === idx && styles.importButtonActive]}
+            onPress={() => setImportMethod(idx)}
+          >
+            <MaterialCommunityIcons 
+              name={m.icon} 
+              size={28} 
+              color={importMethod === idx ? '#4f5ef7' : '#4f5ef7'} 
+            />
+            <Text style={[styles.importButtonText, importMethod === idx && { color: '#4f5ef7' }]}>
+              {m.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      
+      {/* Form Fields */}
+      <View style={styles.formCard}>
+        {importMethod === 1 && (
+          <View style={styles.doiRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, marginRight: 8 }]}
+              placeholder="Enter DOI (e.g. 10.1000/xyz123)"
+              placeholderTextColor="#bbb"
+              value={doi}
+              onChangeText={setDoi}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity 
+              style={styles.lookupButton}
+              onPress={handleDoiLookup}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.lookupButtonText}>Lookup</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+        
+        {importMethod === 2 && (
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={[styles.input, { marginBottom: 8 }]}
+              placeholder="Search paper title, authors, or keywords..."
+              placeholderTextColor="#bbb"
+              value={title}
+              onChangeText={(text) => {
+                setTitle(text);
+                searchPapers(text);
+              }}
+            />
+            {isSearching && (
+              <ActivityIndicator style={styles.searchLoading} color="#4f5ef7" />
+            )}
+            {searchResults.length > 0 && (
+              <View style={styles.searchResults}>
+                {searchResults.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.searchResultItem}
+                    onPress={() => handlePaperSelect(item)}
+                  >
+                    <Text style={styles.searchResultTitle}>{item.title}</Text>
+                    <Text style={styles.searchResultAuthors}>{item.authors}</Text>
+                    <Text style={styles.searchResultMeta}>
+                      {item.journal} • {item.year} • {item.source}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+        
+        <TextInput
+          style={styles.input}
+          placeholder="Enter paper title"
+          placeholderTextColor="#bbb"
+          value={title}
+          onChangeText={setTitle}
+        />
+        
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. John Smith, Alice Doe"
+          placeholderTextColor="#bbb"
+          value={authors}
+          onChangeText={setAuthors}
+        />
+        
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Nature, Science"
+          placeholderTextColor="#bbb"
+          value={journal}
+          onChangeText={setJournal}
+        />
+        
+        <TextInput
+          style={styles.input}
+          placeholder="Year"
+          placeholderTextColor="#bbb"
+          value={year}
+          onChangeText={setYear}
+          keyboardType="numeric"
+        />
+        
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Work,Money,etc"
+          placeholderTextColor="#bbb"
+          value={tags}
+          onChangeText={setTags}
+        />
+      </View>
+      
+      {/* File Attachment */}
+      <View style={styles.attachmentRow}>
+        <View style={styles.attachmentBox}>
+          <Ionicons name="document-attach-outline" size={20} color="#e53935" />
+          <Text style={styles.attachmentText} numberOfLines={1}>
+            {pdfFile ? pdfFile.name : 'No file chosen'}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={handlePickPDF}>
+          <Text style={styles.attachAction}>Attach</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* Collection Selection */}
+      <View style={styles.collectionRow}>
+        <View style={styles.collectionBox}>
+          <Ionicons name="folder-outline" size={20} color="#4f5ef7" />
+          <Text style={styles.collectionText}>{collection}</Text>
+        </View>
+        <TouchableOpacity onPress={showCollectionPicker}>
+          <Text style={styles.chooseAction}>Change</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* Add Paper Button */}
+      <TouchableOpacity 
+        style={[styles.addPaperButton, isSubmitting && { opacity: 0.7 }]} 
+        onPress={handleSubmit}
+        disabled={isSubmitting}
+      >
+        <Text style={styles.addPaperButtonText}>
+          {isSubmitting ? 'Adding...' : 'Add Paper'}
+        </Text>
+      </TouchableOpacity>
+      
+      {/* Cancel Button */}
+      <TouchableOpacity 
+        style={styles.cancelButton} 
+        onPress={() => navigation.goBack()}
+        disabled={isSubmitting}
+      >
+        <Text style={styles.cancelButtonText}>Cancel</Text>
+      </TouchableOpacity>
+    </>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Header */}
@@ -141,124 +529,13 @@ const AddPaperScreen = ({ navigation, route }) => {
         <View style={[styles.dot, { backgroundColor: '#e0e0e0' }]} />
       </View>
       
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
-        {/* Import Method */}
-        <Text style={styles.sectionLabel}>Import Method</Text>
-        <View style={styles.importRow}>
-          {importMethods.map((m, idx) => (
-            <TouchableOpacity
-              key={m.label}
-              style={[styles.importButton, importMethod === idx && styles.importButtonActive]}
-              onPress={() => setImportMethod(idx)}
-            >
-              <MaterialCommunityIcons 
-                name={m.icon} 
-                size={28} 
-                color={importMethod === idx ? '#4f5ef7' : '#4f5ef7'} 
-              />
-              <Text style={[styles.importButtonText, importMethod === idx && { color: '#4f5ef7' }]}>
-                {m.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        
-        {/* Form Fields */}
-        <View style={styles.formCard}>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter paper title"
-            placeholderTextColor="#bbb"
-            value={title}
-            onChangeText={setTitle}
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. John Smith, Alice Doe"
-            placeholderTextColor="#bbb"
-            value={authors}
-            onChangeText={setAuthors}
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Nature, Science"
-            placeholderTextColor="#bbb"
-            value={journal}
-            onChangeText={setJournal}
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="Year"
-            placeholderTextColor="#bbb"
-            value={year}
-            onChangeText={setYear}
-            keyboardType="numeric"
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 10.1000/xyz123"
-            placeholderTextColor="#bbb"
-            value={doi}
-            onChangeText={setDoi}
-          />
-          
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Work,Money,etc"
-            placeholderTextColor="#bbb"
-            value={tags}
-            onChangeText={setTags}
-          />
-        </View>
-        
-        {/* File Attachment */}
-        <View style={styles.attachmentRow}>
-          <View style={styles.attachmentBox}>
-            <Ionicons name="document-attach-outline" size={20} color="#e53935" />
-            <Text style={styles.attachmentText} numberOfLines={1}>
-              {pdfFile ? pdfFile.name : 'No file chosen'}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={handlePickPDF}>
-            <Text style={styles.attachAction}>Attach</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Collection Selection */}
-        <View style={styles.collectionRow}>
-          <View style={styles.collectionBox}>
-            <Ionicons name="folder-outline" size={20} color="#4f5ef7" />
-            <Text style={styles.collectionText}>{collection}</Text>
-          </View>
-          <TouchableOpacity onPress={showCollectionPicker}>
-            <Text style={styles.chooseAction}>Change</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Add Paper Button */}
-        <TouchableOpacity 
-          style={[styles.addPaperButton, isSubmitting && { opacity: 0.7 }]} 
-          onPress={handleSubmit}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.addPaperButtonText}>
-            {isSubmitting ? 'Adding...' : 'Add Paper'}
-          </Text>
-        </TouchableOpacity>
-        
-        {/* Cancel Button */}
-        <TouchableOpacity 
-          style={styles.cancelButton} 
-          onPress={() => navigation.goBack()}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      <FlatList
+        data={[1]} // Single item since we're using it as a container
+        renderItem={() => renderContent()}
+        keyExtractor={() => 'content'}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 };
@@ -423,6 +700,59 @@ const styles = StyleSheet.create({
     color: '#888',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  doiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  lookupButton: {
+    backgroundColor: '#4f5ef7',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  lookupButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  searchContainer: {
+    marginBottom: 16,
+  },
+  searchLoading: {
+    marginTop: 8,
+  },
+  searchResults: {
+    maxHeight: 300,
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  searchResultItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  searchResultTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#222',
+    marginBottom: 4,
+  },
+  searchResultAuthors: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 4,
+  },
+  searchResultMeta: {
+    fontSize: 12,
+    color: '#888',
   },
 });
 
