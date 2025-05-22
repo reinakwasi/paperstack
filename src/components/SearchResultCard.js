@@ -4,114 +4,204 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 const defaultAvatar = 'https://randomuser.me/api/portraits/men/32.jpg';
 
-const SearchResultCard = ({ item }) => {
-  if (item.type === 'Article') {
-    return (
-      <View style={styles.card}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <View style={[styles.tag, { backgroundColor: '#4f5ef7' }]}> 
-            <Text style={styles.tagText}>Article</Text>
-          </View>
+const SearchResultCard = ({ item, type }) => {
+  const renderArticleCard = () => (
+    <View style={styles.card}>
+      <View style={styles.articleHeader}>
+        <View style={[styles.tag, { backgroundColor: item.tagColor + '22' }]}>
+          <Text style={[styles.tagText, { color: item.tagColor }]}>{item.tag}</Text>
         </View>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.subtitle}>{item.authors}  •  {item.journal}  •  {item.year}</Text>
-        <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-          <Ionicons name="open-outline" size={18} color="#4f5ef7" style={{ marginRight: 4 }} />
-          <Text style={styles.openText}>Open</Text>
-        </TouchableOpacity>
-        <Ionicons name="bookmark-outline" size={20} color="#bbb" style={{ position: 'absolute', right: 12, top: 12 }} />
+        {item.open && (
+          <View style={[styles.tag, { backgroundColor: '#2ecc7122' }]}>
+            <Text style={[styles.tagText, { color: '#2ecc71' }]}>Open Access</Text>
+          </View>
+        )}
       </View>
-    );
-  }
-  if (item.type === 'Author') {
-    return (
-      <View style={styles.card}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <View style={[styles.tag, { backgroundColor: '#2ecc71' }]}> 
-            <Text style={styles.tagText}>Author</Text>
-          </View>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-          <Image source={{ uri: item.avatar || defaultAvatar }} style={styles.avatar} />
-          <View style={{ marginLeft: 10 }}>
-            <Text style={styles.title}>{item.name}</Text>
-            <Text style={styles.subtitle}>{item.affiliation}</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-          <Ionicons name="person-add-outline" size={18} color="#2ecc71" style={{ marginRight: 4 }} />
-          <Text style={[styles.openText, { color: '#2ecc71' }]}>Follow</Text>
-        </TouchableOpacity>
-        <Ionicons name="ellipsis-horizontal" size={20} color="#bbb" style={{ position: 'absolute', right: 12, top: 12 }} />
+      <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+      <Text style={styles.authors} numberOfLines={1}>{item.authors}</Text>
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>{item.journal}</Text>
+        <Text style={styles.metaText}>•</Text>
+        <Text style={styles.metaText}>{item.year}</Text>
+        {item.citations > 0 && (
+          <>
+            <Text style={styles.metaText}>•</Text>
+            <Text style={styles.metaText}>{item.citations} citations</Text>
+          </>
+        )}
       </View>
-    );
-  }
-  if (item.type === 'Journal') {
-    return (
-      <View style={styles.card}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-          <View style={[styles.tag, { backgroundColor: '#f4d03f' }]}> 
-            <Text style={[styles.tagText, { color: '#222' }]}>Journal</Text>
+      {item.abstract && (
+        <Text style={styles.abstract} numberOfLines={2}>{item.abstract}</Text>
+      )}
+    </View>
+  );
+
+  const renderAuthorCard = () => (
+    <View style={styles.card}>
+      <View style={styles.authorHeader}>
+        <Image source={{ uri: item.avatar }} style={styles.authorAvatar} />
+        <View style={styles.authorInfo}>
+          <Text style={styles.authorName}>{item.name}</Text>
+          <Text style={styles.affiliation}>{item.affiliation}</Text>
+        </View>
+      </View>
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{item.paperCount}</Text>
+          <Text style={styles.statLabel}>Papers</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{item.citationCount}</Text>
+          <Text style={styles.statLabel}>Citations</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{item.hIndex}</Text>
+          <Text style={styles.statLabel}>h-index</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderJournalCard = () => (
+    <View style={styles.card}>
+      <View style={styles.journalHeader}>
+        <MaterialCommunityIcons name="book-outline" size={24} color={item.tagColor} />
+        <View style={styles.journalInfo}>
+          <Text style={styles.journalName}>{item.name}</Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaText}>Impact Factor: {item.impact}</Text>
+            <Text style={styles.metaText}>•</Text>
+            <Text style={styles.metaText}>{item.paperCount} papers</Text>
+            <Text style={styles.metaText}>•</Text>
+            <Text style={styles.metaText}>{item.citationCount} citations</Text>
           </View>
         </View>
-        <Text style={styles.title}>{item.name}</Text>
-        <Text style={styles.subtitle}>Impact Factor: {item.impact}</Text>
-        <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-          <MaterialCommunityIcons name="book-open-page-variant-outline" size={18} color="#f4d03f" style={{ marginRight: 4 }} />
-          <Text style={[styles.openText, { color: '#f4d03f' }]}>Browse</Text>
-        </TouchableOpacity>
-        <Ionicons name="ellipsis-horizontal" size={20} color="#bbb" style={{ position: 'absolute', right: 12, top: 12 }} />
       </View>
-    );
+    </View>
+  );
+
+  switch (type) {
+    case 'article':
+      return renderArticleCard();
+    case 'author':
+      return renderAuthorCard();
+    case 'journal':
+      return renderJournalCard();
+    default:
+      return renderArticleCard();
   }
-  return null;
 };
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 14,
-    marginHorizontal: 12,
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 16,
     marginVertical: 8,
-    padding: 14,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
     elevation: 2,
-    position: 'relative',
+  },
+  articleHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
   },
   tag: {
-    borderRadius: 8,
+    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     marginRight: 8,
   },
   tagText: {
-    color: '#fff',
-    fontWeight: 'bold',
     fontSize: 12,
+    fontWeight: '600',
   },
   title: {
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 4,
+  },
+  authors: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#888',
+    marginRight: 4,
+  },
+  abstract: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  authorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  authorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+  },
+  authorInfo: {
+    flex: 1,
+  },
+  authorName: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#222',
     marginBottom: 2,
   },
-  subtitle: {
-    color: '#444',
+  affiliation: {
     fontSize: 13,
-    marginBottom: 2,
+    color: '#666',
   },
-  openText: {
-    color: '#4f5ef7',
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 12,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 16,
     fontWeight: 'bold',
-    fontSize: 14,
+    color: '#222',
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#eee',
+  statLabel: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  journalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  journalInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  journalName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 4,
   },
 });
 

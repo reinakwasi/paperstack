@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BottomTabNavigator from './BottomTabNavigator';
 import AddPaperScreen from '../screens/AddPaperScreen';
 import PDFViewerScreen from '../screens/PDFViewerScreen';
+import AuthorDetails from '../screens/AuthorDetails';
 
 const Stack = createNativeStackNavigator();
 
@@ -13,6 +14,7 @@ export default function AppNavigator() {
       <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
       <Stack.Screen name="AddPaper" component={AddPaperScreen} />
       <Stack.Screen name="PDFViewer" component={PDFViewerScreen} />
+      <Stack.Screen name="AuthorDetails" component={AuthorDetails} />
     </Stack.Navigator>
   );
 }
