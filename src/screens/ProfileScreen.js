@@ -12,8 +12,6 @@ const settings = [
   { label: 'Privacy Settings', icon: 'shield-checkmark', color: '#4f8cff' },
   { label: 'Notifications', icon: 'notifications', color: '#ffd600' },
   { label: 'Appearance', icon: 'color-palette', color: '#b47cff' },
-  { label: 'Subscription & Billing', icon: 'crown', color: '#4fcf7f' },
-  { label: 'Import / Export', icon: 'cloud-upload', color: '#4fdfff' },
   { label: 'Help & Support', icon: 'help-circle', color: '#bdbdbd' },
   { label: 'About PaperStack', icon: 'information-circle', color: '#4f8cff' },
 ];
@@ -45,7 +43,15 @@ const ProfileScreen = ({ navigation }) => {
         {/* Settings List */}
         <View style={styles.settingsList}>
           {settings.map((item, idx) => (
-            <TouchableOpacity key={item.label} style={styles.settingsItem}>
+            <TouchableOpacity 
+              key={item.label} 
+              style={styles.settingsItem}
+              onPress={() => {
+                if (item.label === 'About PaperStack') {
+                  navigation.navigate('About');
+                }
+              }}
+            >
               <View style={[styles.iconCircle, { backgroundColor: item.color + '22' }]}> 
                 <Ionicons name={item.icon} size={20} color={item.color} />
               </View>

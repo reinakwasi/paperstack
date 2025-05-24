@@ -8,6 +8,7 @@ import AuthorDetails from '../screens/AuthorDetails';
 import JournalDetails from '../screens/JournalDetails';
 import FolderDetail from '../screens/FolderDetail';
 import LibraryScreen from '../screens/LibraryScreen';
+import AboutScreen from '../screens/AboutScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,6 +28,11 @@ export default function AppNavigator() {
       <Stack.Screen 
         name="Library" 
         component={LibraryScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="About" 
+        component={AboutScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
