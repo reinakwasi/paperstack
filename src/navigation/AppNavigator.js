@@ -6,6 +6,8 @@ import AddPaperScreen from '../screens/AddPaperScreen';
 import PDFViewerScreen from '../screens/PDFViewerScreen';
 import AuthorDetails from '../screens/AuthorDetails';
 import JournalDetails from '../screens/JournalDetails';
+import FolderDetail from '../screens/FolderDetail';
+import LibraryScreen from '../screens/LibraryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -17,6 +19,16 @@ export default function AppNavigator() {
       <Stack.Screen name="PDFViewer" component={PDFViewerScreen} />
       <Stack.Screen name="AuthorDetails" component={AuthorDetails} />
       <Stack.Screen name="JournalDetails" component={JournalDetails} />
+      <Stack.Screen 
+        name="FolderDetail" 
+        component={FolderDetail}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="Library" 
+        component={LibraryScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const PaperItem = ({ item, onPress, onStar, onDownload, onMore }) => {
+const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected }) => {
   const handleDownload = () => {
     if (!item.pdfUrl) {
       Alert.alert('Error', 'No PDF available for this paper.');
@@ -20,118 +20,105 @@ const PaperItem = ({ item, onPress, onStar, onDownload, onMore }) => {
   };
 
   return (
-    <TouchableOpacity style={styles.container} onPress={handlePress}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-        <View style={[styles.tag, { backgroundColor: item.tagColor || '#eee' }]}>
-          <Text style={styles.type}>{item.tag}</Text>
-        </View>
-        <Text style={styles.year}>{item.year}</Text>
-        {item.readStatus?.toLowerCase() === 'read' && (
-          <View style={styles.readBadge}>
-            <Text style={styles.readText}>Read</Text>
+    <View style={[
+      styles.container,
+      isSelected && styles.selectedContainer
+    ]}>
+      <TouchableOpacity 
+        style={styles.content} 
+        onPress={handlePress}
+      >
+        <View style={styles.leftContent}>
+          {isSelected && (
+            <View style={styles.checkmarkContainer}>
+              <Ionicons name="checkmark-circle" size={24} color="#4f5ef7" />
+            </View>
+          )}
+          <View style={styles.textContainer}>
+            <Text style={styles.title} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text style={styles.authors} numberOfLines={1}>
+              {item.authors}
+            </Text>
+            <Text style={styles.journal}>
+              {item.journal} • {item.year}
+            </Text>
           </View>
-        )}
-      </View>
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.authors}>{item.authors}</Text>
-      <View style={styles.meta}>
-        <Text style={styles.journal}>{item.source}</Text>
-        <Text style={styles.pages}>{item.pages}</Text>
-      </View>
-      <View style={styles.iconRow}>
-        <TouchableOpacity onPress={() => onStar(item.id)} style={styles.iconButton}>
-          <Ionicons
-            name={item.starred ? 'star' : 'star-outline'}
-            size={20}
-            color={item.starred ? '#FFD600' : '#aaa'}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleDownload} style={styles.iconButton}>
-          <Ionicons 
-            name={item.localUri ? 'checkmark-circle' : 'download-outline'} 
-            size={20} 
-            color={item.localUri ? '#4f5ef7' : '#aaa'} 
-          />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => onMore(item)} style={styles.iconButton}>
-          <Ionicons name="ellipsis-horizontal" size={20} color="#aaa" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
+        </View>
+        <View style={styles.actions}>
+          <TouchableOpacity onPress={() => onStar(item.id)} style={styles.actionButton}>
+            <Ionicons 
+              name={item.starred ? "star" : "star-outline"} 
+              size={20} 
+              color={item.starred ? "#FFD700" : "#666"} 
+            />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDownload} style={styles.actionButton}>
+            <Ionicons name="download-outline" size={20} color="#666" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onMore(item)} style={styles.actionButton}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
     backgroundColor: '#fff',
-    borderRadius: 14,
-    marginHorizontal: 12,
-    marginVertical: 8,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginVertical: 6,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  tag: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 8,
+  selectedContainer: {
+    backgroundColor: '#f0f2ff',
+    borderColor: '#4f5ef7',
+    borderWidth: 1,
   },
-  type: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: 'bold',
+  content: {
+    flexDirection: 'row',
+    padding: 16,
   },
-  year: {
-    fontSize: 12,
-    color: 'gray',
-    fontWeight: '500',
+  leftContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  readBadge: {
-    backgroundColor: '#4f5ef7',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginLeft: 8,
+  checkmarkContainer: {
+    marginRight: 12,
   },
-  readText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '500',
+  textContainer: {
+    flex: 1,
   },
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#222',
     marginBottom: 4,
   },
   authors: {
-    fontSize: 14,
-    color: 'gray',
-    marginBottom: 4,
-  },
-  meta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
   },
   journal: {
-    fontSize: 14,
-    color: 'gray',
+    fontSize: 12,
+    color: '#888',
   },
-  pages: {
-    fontSize: 14,
-    color: 'gray',
-  },
-  iconRow: {
+  actions: {
     flexDirection: 'row',
-    marginTop: 4,
+    alignItems: 'center',
   },
-  iconButton: {
+  actionButton: {
     padding: 8,
-    marginRight: 8,
+    marginLeft: 4,
   },
 });
 

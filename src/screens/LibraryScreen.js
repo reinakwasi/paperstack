@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActionSheetIOS, Platform, Modal, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, ActionSheetIOS, Platform, Modal, Pressable, ActivityIndicator, TextInput } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Header from '../components/Header';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import PaperItem from '../components/PaperItem';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 
-const LibraryScreen = ({ navigation }) => {
+const LibraryScreen = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { onSelect } = route.params || {};
+  
   const [activeFilter, setActiveFilter] = useState('recent');
   const [papers, setPapers] = useState([]);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
@@ -15,6 +19,9 @@ const LibraryScreen = ({ navigation }) => {
   const [moveModalVisible, setMoveModalVisible] = useState(false);
   const [collections, setCollections] = useState(['Default', 'Research', 'Favorites']);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPapers, setSelectedPapers] = useState([]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   const filters = [
     { label: 'All' },
@@ -31,6 +38,7 @@ const LibraryScreen = ({ navigation }) => {
     React.useCallback(() => {
       const loadPapers = async () => {
         try {
+          setLoading(true);
           const savedPapers = await AsyncStorage.getItem('papers');
           if (savedPapers) {
             const parsedPapers = JSON.parse(savedPapers);
@@ -40,6 +48,7 @@ const LibraryScreen = ({ navigation }) => {
           }
         } catch (error) {
           console.error('Error loading papers:', error);
+          Alert.alert('Error', 'Failed to load papers');
         } finally {
           setLoading(false);
         }
@@ -250,6 +259,42 @@ const LibraryScreen = ({ navigation }) => {
     setMoveModalVisible(false);
   };
 
+  const handlePaperPress = (paper) => {
+    if (isSelectionMode) {
+      togglePaperSelection(paper);
+    } else if (onSelect) {
+      onSelect(paper);
+      navigation.goBack();
+    } else {
+      handleOpenPDF(paper);
+    }
+  };
+
+  const togglePaperSelection = (paper) => {
+    setSelectedPapers(prev => {
+      const isSelected = prev.some(p => p.id === paper.id);
+      if (isSelected) {
+        return prev.filter(p => p.id !== paper.id);
+      } else {
+        return [...prev, paper];
+      }
+    });
+  };
+
+  const handleDone = () => {
+    if (selectedPapers.length > 0) {
+      selectedPapers.forEach(paper => onSelect(paper));
+      navigation.goBack();
+    } else {
+      Alert.alert('Info', 'Please select at least one paper');
+    }
+  };
+
+  const filteredPapers = papers.filter(paper =>
+    paper.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    paper.authors.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const renderFilterButton = (filter, label) => (
     <TouchableOpacity
       style={[styles.filterButton, activeFilter === filter && styles.activeFilterButton]}
@@ -288,19 +333,47 @@ const LibraryScreen = ({ navigation }) => {
         {renderFilterButton('unread', 'Unread')}
         {renderFilterButton('cited', 'Cited')}
       </View>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={20} color="#bbb" style={{ marginLeft: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search papers..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
       <FlatList
-        data={getFilteredPapers()}
+        data={filteredPapers}
         renderItem={({ item }) => (
-          <PaperItem
-            item={item}
-            onPress={() => handleOpenPDF(item)}
-            onStar={() => toggleStar(item.id)}
-            onDownload={() => handleDownload(item)}
-            onMore={() => handleMore(item)}
-          />
+          <TouchableOpacity
+            onPress={() => handlePaperPress(item)}
+            onLongPress={() => {
+              if (onSelect && !isSelectionMode) {
+                setIsSelectionMode(true);
+                togglePaperSelection(item);
+              }
+            }}
+          >
+            <PaperItem
+              item={item}
+              onPress={() => handlePaperPress(item)}
+              onStar={() => toggleStar(item.id)}
+              onDownload={() => handleDownload(item)}
+              onMore={() => handleMore(item)}
+              isSelected={isSelectionMode && selectedPapers.some(p => p.id === item.id)}
+            />
+          </TouchableOpacity>
         )}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ paddingBottom: 16 }}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No papers found</Text>
+            <Text style={styles.emptySubText}>
+              {searchQuery ? 'Try a different search term' : 'Add papers to your library'}
+            </Text>
+          </View>
+        }
       />
       <Modal
         visible={detailsModalVisible}
@@ -483,6 +556,42 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    margin: 16,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#222',
+    marginLeft: 8,
+    paddingVertical: 6,
+  },
+  listContent: {
+    paddingBottom: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 

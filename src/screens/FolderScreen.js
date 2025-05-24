@@ -1,27 +1,361 @@
-// src/screens/FoldersScreen.js
-import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+// src/screens/FolderScreen.js
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  FlatList, 
+  StyleSheet, 
+  TouchableOpacity, 
+  ScrollView, 
+  Image,
+  TextInput,
+  Alert,
+  Modal,
+  ActivityIndicator,
+  SectionList
+} from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 
-const myFolders = [
-  { id: '1', name: 'Project Z', updated: '2 days ago', color: '#FFA726', count: 14, icon: 'folder' },
-  { id: '2', name: 'Project X', updated: '1h ago', color: '#42A5F5', count: 6, icon: 'folder' },
-  { id: '3', name: 'Literature Review', updated: '5d ago', color: '#EC407A', count: 25, icon: 'folder' },
-  { id: '4', name: 'Personal', updated: '3w ago', color: '#26A69A', count: 3, icon: 'folder' },
-  { id: '5', name: '2024 Papers', updated: '2mo ago', color: '#7E57C2', count: 8, icon: 'folder' },
+const FOLDER_COLORS = [
+  '#FFA726', '#42A5F5', '#EC407A', '#26A69A', '#7E57C2', 
+  '#FFD600', '#00B8D4', '#FF7043', '#5C6BC0', '#66BB6A'
 ];
 
-const sharedFolders = [
-  { id: '6', name: 'Lab Group', sharedBy: 'Alex', updated: '4d ago', color: '#FFD600', count: 11, avatar: 'https://randomuser.me/api/portraits/men/32.jpg' },
-  { id: '7', name: 'Collab Workspace', sharedBy: 'Maria', updated: '2w ago', color: '#00B8D4', count: 19, avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
-];
+const FolderScreen = ({ navigation }) => {
+  const [myFolders, setMyFolders] = useState([]);
+  const [sharedFolders, setSharedFolders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[0]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
 
-const FoldersScreen = () => {
+  // Load folders when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadFolders();
+    }, [])
+  );
+
+  const loadFolders = async () => {
+    try {
+      setLoading(true);
+      const savedMyFolders = await AsyncStorage.getItem('my_folders');
+      const savedSharedFolders = await AsyncStorage.getItem('shared_folders');
+      
+      if (savedMyFolders) {
+        setMyFolders(JSON.parse(savedMyFolders));
+      } else {
+        // Initialize with default folders if none exist
+        const defaultFolders = [
+          { 
+            id: '1', 
+            name: 'Project Z', 
+            updated: new Date().toISOString(), 
+            color: FOLDER_COLORS[0], 
+            count: 0, 
+            icon: 'folder',
+            papers: []
+          },
+          { 
+            id: '2', 
+            name: 'Literature Review', 
+            updated: new Date().toISOString(), 
+            color: FOLDER_COLORS[1], 
+            count: 0, 
+            icon: 'folder',
+            papers: []
+          }
+        ];
+        await AsyncStorage.setItem('my_folders', JSON.stringify(defaultFolders));
+        setMyFolders(defaultFolders);
+      }
+
+      if (savedSharedFolders) {
+        setSharedFolders(JSON.parse(savedSharedFolders));
+      }
+    } catch (error) {
+      console.error('Error loading folders:', error);
+      Alert.alert('Error', 'Failed to load folders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createNewFolder = async () => {
+    if (!newFolderName.trim()) {
+      Alert.alert('Error', 'Please enter a folder name');
+      return;
+    }
+
+    try {
+      const newFolder = {
+        id: Date.now().toString(),
+        name: newFolderName.trim(),
+        updated: new Date().toISOString(),
+        color: selectedColor,
+        count: 0,
+        icon: 'folder',
+        papers: []
+      };
+
+      const updatedFolders = [...myFolders, newFolder];
+      await AsyncStorage.setItem('my_folders', JSON.stringify(updatedFolders));
+      setMyFolders(updatedFolders);
+      setShowNewFolderModal(false);
+      setNewFolderName('');
+      setSelectedColor(FOLDER_COLORS[0]);
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      Alert.alert('Error', 'Failed to create folder');
+    }
+  };
+
+  const deleteFolder = async (folderId) => {
+    Alert.alert(
+      'Delete Folder',
+      'Are you sure you want to delete this folder?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updatedFolders = myFolders.filter(f => f.id !== folderId);
+              await AsyncStorage.setItem('my_folders', JSON.stringify(updatedFolders));
+              setMyFolders(updatedFolders);
+            } catch (error) {
+              console.error('Error deleting folder:', error);
+              Alert.alert('Error', 'Failed to delete folder');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim()) {
+      Alert.alert('Error', 'Please enter an email address');
+      return;
+    }
+
+    try {
+      // Here you would typically make an API call to send the invitation
+      Alert.alert('Success', `Invitation sent to ${inviteEmail}`);
+      setShowInviteModal(false);
+      setInviteEmail('');
+    } catch (error) {
+      console.error('Error sending invitation:', error);
+      Alert.alert('Error', 'Failed to send invitation');
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+    const diffMinutes = Math.floor(diffTime / (1000 * 60));
+
+    if (diffDays > 0) {
+      return `${diffDays}d ago`;
+    } else if (diffHours > 0) {
+      return `${diffHours}h ago`;
+    } else if (diffMinutes > 0) {
+      return `${diffMinutes}m ago`;
+    } else {
+      return 'just now';
+    }
+  };
+
+  const renderNewFolderModal = () => (
+    <Modal
+      visible={showNewFolderModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowNewFolderModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>New Folder</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Folder name"
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            autoFocus
+          />
+          <Text style={styles.colorTitle}>Choose a color</Text>
+          <View style={styles.colorGrid}>
+            {FOLDER_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: color },
+                  selectedColor === color && styles.selectedColor
+                ]}
+                onPress={() => setSelectedColor(color)}
+              />
+            ))}
+          </View>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowNewFolderModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.createButton]}
+              onPress={createNewFolder}
+            >
+              <Text style={styles.createButtonText}>Create</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderInviteModal = () => (
+    <Modal
+      visible={showInviteModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowInviteModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Invite Collaborator</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email address"
+            value={inviteEmail}
+            onChangeText={setInviteEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoFocus
+          />
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowInviteModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.createButton]}
+              onPress={handleInvite}
+            >
+              <Text style={styles.createButtonText}>Send Invite</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderSectionHeader = (title, actionButton) => (
+    <View style={styles.sectionRow}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {actionButton}
+    </View>
+  );
+
+  const renderItem = ({ item, section }) => {
+    if (section.title === 'MY FOLDERS') {
+      return (
+        <TouchableOpacity 
+          style={styles.folderCard}
+          onPress={() => navigation.navigate('FolderDetail', { folder: item })}
+          onLongPress={() => deleteFolder(item.id)}
+        >
+          <View style={[styles.folderIcon, { backgroundColor: item.color + '20' }]}>
+            <MaterialCommunityIcons name={item.icon} size={24} color={item.color} />
+          </View>
+          <View style={styles.folderInfo}>
+            <Text style={styles.folderName}>{item.name}</Text>
+            <Text style={styles.folderMeta}>
+              {item.count} papers • Updated {formatDate(item.updated)}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#bbb" />
+        </TouchableOpacity>
+      );
+    } else {
+      return (
+        <TouchableOpacity 
+          style={styles.folderCard}
+          onPress={() => navigation.navigate('FolderDetail', { folder: item })}
+        >
+          <View style={[styles.folderIcon, { backgroundColor: item.color + '20' }]}>
+            <MaterialCommunityIcons name={item.icon} size={24} color={item.color} />
+          </View>
+          <View style={styles.folderInfo}>
+            <Text style={styles.folderName}>{item.name}</Text>
+            <Text style={styles.folderMeta}>
+              {item.count} papers • Updated {formatDate(item.updated)}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#bbb" />
+        </TouchableOpacity>
+      );
+    }
+  };
+
+  const sections = [
+    {
+      title: 'MY FOLDERS',
+      data: myFolders,
+      renderItem: renderItem,
+      ListHeaderComponent: renderSectionHeader(
+        'MY FOLDERS',
+        <TouchableOpacity 
+          style={styles.newButton}
+          onPress={() => setShowNewFolderModal(true)}
+        >
+          <Ionicons name="add" size={16} color="#fff" />
+          <Text style={styles.newButtonText}>New</Text>
+        </TouchableOpacity>
+      )
+    },
+    {
+      title: 'SHARED WITH ME',
+      data: sharedFolders,
+      renderItem: renderItem,
+      ListHeaderComponent: renderSectionHeader(
+        'SHARED WITH ME',
+        <TouchableOpacity 
+          style={styles.inviteButton}
+          onPress={() => setShowInviteModal(true)}
+        >
+          <Ionicons name="person-add" size={16} color="#222" />
+          <Text style={styles.inviteButtonText}>Invite</Text>
+        </TouchableOpacity>
+      )
+    }
+  ];
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4f5ef7" />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fafbfc' }}>
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#222" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Folders</Text>
@@ -34,53 +368,26 @@ const FoldersScreen = () => {
           </TouchableOpacity>
         </View>
       </View>
-      <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
-        {/* My Folders Section */}
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>MY FOLDERS</Text>
-          <TouchableOpacity style={styles.newButton}>
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={styles.newButtonText}>New</Text>
-          </TouchableOpacity>
-        </View>
-        {myFolders.map(folder => (
-          <View key={folder.id} style={styles.folderCard}>
-            <MaterialCommunityIcons name={folder.icon} size={28} color={folder.color} style={{ marginRight: 12 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.folderName}>{folder.name}</Text>
-              <Text style={styles.folderUpdated}>Last updated {folder.updated}</Text>
-            </View>
-            <Text style={styles.folderCount}>{folder.count}</Text>
-          </View>
-        ))}
-        {/* Shared With Me Section */}
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>SHARED WITH ME</Text>
-          <TouchableOpacity style={styles.inviteButton}>
-            <Ionicons name="person-add" size={16} color="#222" />
-            <Text style={styles.inviteButtonText}>Invite</Text>
-          </TouchableOpacity>
-        </View>
-        {sharedFolders.map(folder => (
-          <View key={folder.id} style={styles.folderCard}>
-            {folder.avatar ? (
-              <Image source={{ uri: folder.avatar }} style={styles.avatar} />
-            ) : (
-              <MaterialCommunityIcons name="folder" size={28} color={folder.color} style={{ marginRight: 12 }} />
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.folderName}>{folder.name}</Text>
-              <Text style={styles.folderSharedBy}>Shared by {folder.sharedBy} • {folder.updated}</Text>
-            </View>
-            <Text style={styles.folderCount}>{folder.count}</Text>
-          </View>
-        ))}
-      </ScrollView>
+
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        renderSectionHeader={({ section }) => section.ListHeaderComponent}
+        contentContainerStyle={{ paddingBottom: 80 }}
+      />
+
       {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab}>
+      <TouchableOpacity 
+        style={styles.fab}
+        onPress={() => setShowNewFolderModal(true)}
+      >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
-      {/* Bottom tab bar will be added here */}
+
+      {/* Modals */}
+      {renderNewFolderModal()}
+      {renderInviteModal()}
     </View>
   );
 };
@@ -157,26 +464,26 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
+  folderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  folderInfo: {
+    flex: 1,
+  },
   folderName: {
     fontSize: 15,
     fontWeight: 'bold',
     color: '#222',
   },
-  folderUpdated: {
+  folderMeta: {
     color: '#888',
     fontSize: 12,
     marginTop: 2,
-  },
-  folderSharedBy: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  folderCount: {
-    color: '#bbb',
-    fontWeight: 'bold',
-    fontSize: 15,
-    marginLeft: 8,
   },
   fab: {
     position: 'absolute',
@@ -193,13 +500,84 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 12,
-    backgroundColor: '#eee',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fafbfc',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  colorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 12,
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 20,
+  },
+  colorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    margin: 8,
+  },
+  selectedColor: {
+    borderWidth: 3,
+    borderColor: '#222',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modalButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+  cancelButton: {
+    backgroundColor: '#f2f2f2',
+  },
+  createButton: {
+    backgroundColor: '#4f5ef7',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontWeight: '600',
+  },
+  createButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 
-export default FoldersScreen;
+export default FolderScreen;
