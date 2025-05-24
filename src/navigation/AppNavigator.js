@@ -11,6 +11,7 @@ import LibraryScreen from '../screens/LibraryScreen';
 import AboutScreen from '../screens/AboutScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import PrivacySettingsScreen from '../screens/PrivacySettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -45,6 +46,11 @@ export default function AppNavigator() {
       <Stack.Screen 
         name="NotificationSettings" 
         component={NotificationsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="PrivacySettings" 
+        component={PrivacySettingsScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

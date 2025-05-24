@@ -53,6 +53,8 @@ const ProfileScreen = ({ navigation }) => {
                   navigation.navigate('HelpSupport');
                 } else if (item.label === 'Notifications') {
                   navigation.navigate('NotificationSettings');
+                } else if (item.label === 'Privacy Settings') {
+                  navigation.navigate('PrivacySettings');
                 }
               }}
             >
