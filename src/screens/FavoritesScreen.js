@@ -1,62 +1,11 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ActionSheetIOS, Platform } from 'react-native';
 import Header from '../components/Header';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-const favorites = [
-  {
-    id: '1',
-    title: 'The secret lives of urban foxes: THE Recognition',
-    authors: 'Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun',
-    year: '2015',
-    venue: 'CVPR',
-    type: 'Journal',
-    citations: '85,123',
-    color: '#4f5ef7',
-    icon: 'book-open-variant',
-    tag: 'Journal',
-    tagColor: '#4f5ef7',
-  },
-  {
-    id: '2',
-    title: 'Attention is All You Need',
-    authors: 'Ashish Vaswani, Noam Shazeer, Niki Parmar, et al.',
-    year: '2017',
-    venue: 'NeurIPS',
-    type: 'Conference',
-    citations: '68,541',
-    color: '#2ecc71',
-    icon: 'account-group',
-    tag: 'Conference',
-    tagColor: '#2ecc71',
-  },
-  {
-    id: '3',
-    title: 'BERT: Pre-training of Deep Bidirectional Transformers',
-    authors: 'Jacob Devlin, Ming-Wei Chang, et al.',
-    year: '2019',
-    venue: 'NAACL',
-    type: 'Preprint',
-    citations: '34,110',
-    color: '#e84393',
-    icon: 'file-document',
-    tag: 'Preprint',
-    tagColor: '#e84393',
-  },
-  {
-    id: '4',
-    title: 'The future of sleep: Do we really need 8 hours?',
-    authors: 'Christopher M. Bishop',
-    year: '2006',
-    venue: 'Book',
-    type: 'Book',
-    citations: '29,205',
-    color: '#2980ef',
-    icon: 'book',
-    tag: 'Book',
-    tagColor: '#2980ef',
-  },
-];
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import PaperItem from '../components/PaperItem';
+import * as FileSystem from 'expo-file-system';
 
 const filters = [
   { label: 'All', active: true },
@@ -66,7 +15,217 @@ const filters = [
   { label: 'Preprint' },
 ];
 
-const FavoritesScreen = () => {
+const FavoritesScreen = ({ navigation }) => {
+  const [papers, setPapers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('All');
+
+  // Load papers from AsyncStorage when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadPapers = async () => {
+        try {
+          const savedPapers = await AsyncStorage.getItem('papers');
+          if (savedPapers) {
+            const parsedPapers = JSON.parse(savedPapers);
+            // Filter only starred papers
+            const starredPapers = parsedPapers.filter(paper => paper.starred);
+            setPapers(starredPapers);
+          }
+        } catch (error) {
+          console.error('Error loading papers:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadPapers();
+    }, [])
+  );
+
+  // Toggle star handler
+  const toggleStar = async (id) => {
+    try {
+      const updatedPapers = papers.map(paper =>
+        paper.id === id ? { ...paper, starred: !paper.starred } : paper
+      );
+      setPapers(updatedPapers.filter(paper => paper.starred));
+      
+      // Update in AsyncStorage
+      const allPapers = await AsyncStorage.getItem('papers');
+      if (allPapers) {
+        const parsedAllPapers = JSON.parse(allPapers);
+        const updatedAllPapers = parsedAllPapers.map(paper =>
+          paper.id === id ? { ...paper, starred: !paper.starred } : paper
+        );
+        await AsyncStorage.setItem('papers', JSON.stringify(updatedAllPapers));
+      }
+    } catch (error) {
+      console.error('Error toggling star:', error);
+    }
+  };
+
+  // Download handler
+  const handleDownload = async (item) => {
+    try {
+      if (!item.pdfUrl) {
+        Alert.alert('Error', 'No PDF URL available for this paper.');
+        return;
+      }
+
+      const fileName = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      
+      const downloadResumable = FileSystem.createDownloadResumable(
+        item.pdfUrl,
+        fileUri,
+        {},
+        (downloadProgress) => {
+          const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+          console.log(`Download progress: ${progress * 100}%`);
+        }
+      );
+
+      const { uri } = await downloadResumable.downloadAsync();
+      
+      // Update the paper's localUri in the state
+      const updatedPapers = papers.map(paper => 
+        paper.id === item.id ? { ...paper, localUri: uri } : paper
+      );
+      setPapers(updatedPapers);
+      await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+      
+      Alert.alert('Success', 'PDF downloaded successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to download PDF: ' + error.message);
+    }
+  };
+
+  // Open PDF handler
+  const handleOpenPDF = async (item) => {
+    try {
+      if (!item.pdfUrl && !item.localUri) {
+        Alert.alert('Error', 'No PDF available for this paper.');
+        return;
+      }
+
+      let uriToOpen = item.localUri;
+      if (!uriToOpen && item.pdfUrl) {
+        // If no local copy exists, download it
+        const fileName = `${item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`;
+        const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+        
+        const downloadResumable = FileSystem.createDownloadResumable(
+          item.pdfUrl,
+          fileUri,
+          {},
+          (downloadProgress) => {
+            const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+            console.log(`Download progress: ${progress * 100}%`);
+          }
+        );
+
+        const { uri } = await downloadResumable.downloadAsync();
+        uriToOpen = uri;
+
+        // Update the paper's localUri in the state
+        const updatedPapers = papers.map(paper => 
+          paper.id === item.id ? { ...paper, localUri: uri } : paper
+        );
+        setPapers(updatedPapers);
+        await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+      }
+
+      navigation.navigate('PDFViewer', { uri: uriToOpen, title: item.title });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open PDF: ' + error.message);
+    }
+  };
+
+  // More handler
+  const handleMore = (item) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Details', 'Move', 'Delete', item.readStatus === 'read' ? 'Mark as Unread' : 'Mark as Read'],
+          destructiveButtonIndex: 3,
+          cancelButtonIndex: 0,
+          title: item.title,
+        },
+        buttonIndex => {
+          if (buttonIndex === 1) {
+            navigation.navigate('PaperDetail', { paper: item });
+          }
+          if (buttonIndex === 2) {
+            // Handle move
+          }
+          if (buttonIndex === 3) {
+            // Handle delete
+          }
+          if (buttonIndex === 4) {
+            // Handle read status
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        item.title,
+        '',
+        [
+          {
+            text: 'Details',
+            onPress: () => navigation.navigate('PaperDetail', { paper: item }),
+          },
+          {
+            text: 'Move',
+            onPress: () => {
+              // Handle move
+            },
+          },
+          { text: 'Delete', onPress: () => {
+            // Handle delete
+          }, style: 'destructive' },
+          {
+            text: item.readStatus === 'read' ? 'Mark as Unread' : 'Mark as Read',
+            onPress: () => {
+              // Handle read status
+            },
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    }
+  };
+
+  // Filter papers based on search query and active filter
+  const getFilteredPapers = () => {
+    let filtered = papers;
+    
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(paper =>
+        paper.title.toLowerCase().includes(query) ||
+        paper.authors.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply type filter
+    if (activeFilter !== 'All') {
+      filtered = filtered.filter(paper => paper.type === activeFilter);
+    }
+    
+    return filtered;
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4f5ef7" />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fafbfc' }}>
       <Header title="Favorites" />
@@ -76,43 +235,46 @@ const FavoritesScreen = () => {
           style={styles.searchInput}
           placeholder="Search favorites..."
           placeholderTextColor="#bbb"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
         />
         <TouchableOpacity style={styles.filterIcon}>
           <Ionicons name="options-outline" size={20} color="#4f5ef7" />
         </TouchableOpacity>
       </View>
       <View style={styles.filterBar}>
-        {filters.map((filter, idx) => (
+        {filters.map((filter) => (
           <TouchableOpacity
             key={filter.label}
-            style={[styles.filterChip, filter.active && styles.filterChipActive]}
+            style={[styles.filterChip, activeFilter === filter.label && styles.filterChipActive]}
+            onPress={() => setActiveFilter(filter.label)}
           >
-            <Text style={[styles.filterText, filter.active && styles.filterTextActive]}>{filter.label}</Text>
+            <Text style={[styles.filterText, activeFilter === filter.label && styles.filterTextActive]}>
+              {filter.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
       <FlatList
-        data={favorites}
+        data={getFilteredPapers()}
         renderItem={({ item }) => (
-          <View style={styles.paperCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <MaterialCommunityIcons name={item.icon} size={24} color={item.color} style={{ marginRight: 8 }} />
-              <Text style={styles.paperTitle}>{item.title}</Text>
-              <Ionicons name="star-outline" size={22} color="#4f5ef7" style={{ marginLeft: 'auto' }} />
-            </View>
-            <Text style={styles.paperAuthors}>{item.authors}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-              <View style={[styles.tag, { backgroundColor: item.tagColor }]}> 
-                <Text style={styles.tagText}>{item.tag}</Text>
-              </View>
-              <Text style={styles.citedText}>Cited by {item.citations}</Text>
-            </View>
-          </View>
+          <PaperItem
+            item={item}
+            onPress={() => handleOpenPDF(item)}
+            onStar={() => toggleStar(item.id)}
+            onDownload={() => handleDownload(item)}
+            onMore={() => handleMore(item)}
+          />
         )}
         keyExtractor={item => item.id}
         contentContainerStyle={{ paddingBottom: 16 }}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No favorite papers yet</Text>
+            <Text style={styles.emptySubText}>Star papers in your library to see them here</Text>
+          </View>
+        }
       />
-      {/* Bottom tab bar will be added here */}
     </View>
   );
 };
@@ -160,43 +322,27 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: '#fff',
   },
-  paperCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    marginHorizontal: 12,
-    marginVertical: 8,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  paperTitle: {
-    fontSize: 15,
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  emptyText: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#222',
-    flex: 1,
+    marginBottom: 8,
   },
-  paperAuthors: {
-    color: '#444',
-    fontSize: 13,
-    marginTop: 2,
-    marginBottom: 2,
-  },
-  tag: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 8,
-  },
-  tagText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  citedText: {
-    color: '#aaa',
-    fontSize: 13,
+  emptySubText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 
