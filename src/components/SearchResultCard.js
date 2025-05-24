@@ -1,10 +1,70 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const defaultAvatar = 'https://randomuser.me/api/portraits/men/32.jpg';
 
-const SearchResultCard = ({ item, type }) => {
+const SearchResultCard = ({ item, type, onStar }) => {
+  const handleStar = async () => {
+    try {
+      switch (type) {
+        case 'article':
+          // Update papers in AsyncStorage
+          const savedPapers = await AsyncStorage.getItem('papers');
+          let papers = savedPapers ? JSON.parse(savedPapers) : [];
+          const paperExists = papers.some(p => p.id === item.id);
+          
+          if (paperExists) {
+            // Toggle star status of existing paper
+            papers = papers.map(paper =>
+              paper.id === item.id ? { ...paper, starred: !paper.starred } : paper
+            );
+          } else {
+            // Add new paper with starred status
+            papers.push({ ...item, starred: true });
+          }
+          await AsyncStorage.setItem('papers', JSON.stringify(papers));
+          break;
+
+        case 'author':
+          // Update favorite authors in AsyncStorage
+          const savedAuthors = await AsyncStorage.getItem('favorite_authors');
+          let authors = savedAuthors ? JSON.parse(savedAuthors) : [];
+          const authorExists = authors.some(a => a.id === item.id);
+          
+          if (authorExists) {
+            authors = authors.filter(a => a.id !== item.id);
+          } else {
+            authors.push(item);
+          }
+          await AsyncStorage.setItem('favorite_authors', JSON.stringify(authors));
+          break;
+
+        case 'journal':
+          // Update favorite journals in AsyncStorage
+          const savedJournals = await AsyncStorage.getItem('favorite_journals');
+          let journals = savedJournals ? JSON.parse(savedJournals) : [];
+          const journalExists = journals.some(j => j.id === item.id);
+          
+          if (journalExists) {
+            journals = journals.filter(j => j.id !== item.id);
+          } else {
+            journals.push(item);
+          }
+          await AsyncStorage.setItem('favorite_journals', JSON.stringify(journals));
+          break;
+      }
+
+      // Call the onStar callback if provided
+      if (onStar) {
+        onStar(item);
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
   const renderArticleCard = () => (
     <View style={styles.card}>
       <View style={styles.articleHeader}>
@@ -16,6 +76,13 @@ const SearchResultCard = ({ item, type }) => {
             <Text style={[styles.tagText, { color: '#2ecc71' }]}>Open Access</Text>
           </View>
         )}
+        <TouchableOpacity style={styles.starButton} onPress={handleStar}>
+          <Ionicons 
+            name={item.starred ? "star" : "star-outline"} 
+            size={20} 
+            color={item.starred ? "#FFD600" : "#888"} 
+          />
+        </TouchableOpacity>
       </View>
       <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
       <Text style={styles.authors} numberOfLines={1}>{item.authors}</Text>
@@ -44,6 +111,13 @@ const SearchResultCard = ({ item, type }) => {
           <Text style={styles.authorName}>{item.name}</Text>
           <Text style={styles.affiliation}>{item.affiliation}</Text>
         </View>
+        <TouchableOpacity style={styles.starButton} onPress={handleStar}>
+          <Ionicons 
+            name={item.starred ? "star" : "star-outline"} 
+            size={20} 
+            color={item.starred ? "#FFD600" : "#888"} 
+          />
+        </TouchableOpacity>
       </View>
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
@@ -76,6 +150,13 @@ const SearchResultCard = ({ item, type }) => {
             <Text style={styles.metaText}>{item.citationCount} citations</Text>
           </View>
         </View>
+        <TouchableOpacity style={styles.starButton} onPress={handleStar}>
+          <Ionicons 
+            name={item.starred ? "star" : "star-outline"} 
+            size={20} 
+            color={item.starred ? "#FFD600" : "#888"} 
+          />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -202,6 +283,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#222',
     marginBottom: 4,
+  },
+  starButton: {
+    marginLeft: 'auto',
+    padding: 4,
   },
 });
 

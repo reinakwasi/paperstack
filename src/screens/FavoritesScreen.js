@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ActionSheetIOS, Platform, SectionList, Image } from 'react-native';
 import Header from '../components/Header';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,48 +8,71 @@ import PaperItem from '../components/PaperItem';
 import * as FileSystem from 'expo-file-system';
 
 const filters = [
-  { label: 'All', active: true },
-  { label: 'Journal' },
-  { label: 'Conference' },
-  { label: 'Book' },
-  { label: 'Preprint' },
+  { label: 'All', icon: 'apps' },
+  { label: 'Articles', icon: 'file-document-outline' },
+  { label: 'Authors', icon: 'account-outline' },
+  { label: 'Journals', icon: 'book-outline' },
 ];
 
 const FavoritesScreen = ({ navigation }) => {
-  const [papers, setPapers] = useState([]);
+  const [favorites, setFavorites] = useState({
+    articles: [],
+    authors: [],
+    journals: []
+  });
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // Load papers from AsyncStorage when screen is focused
+  // Load favorites from AsyncStorage when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      const loadPapers = async () => {
+      const loadFavorites = async () => {
         try {
+          setLoading(true);
           const savedPapers = await AsyncStorage.getItem('papers');
+          const savedAuthors = await AsyncStorage.getItem('favorite_authors');
+          const savedJournals = await AsyncStorage.getItem('favorite_journals');
+          
           if (savedPapers) {
             const parsedPapers = JSON.parse(savedPapers);
             // Filter only starred papers
             const starredPapers = parsedPapers.filter(paper => paper.starred);
-            setPapers(starredPapers);
+            setFavorites(prev => ({ ...prev, articles: starredPapers }));
+          } else {
+            setFavorites(prev => ({ ...prev, articles: [] }));
+          }
+          
+          if (savedAuthors) {
+            const authors = JSON.parse(savedAuthors);
+            setFavorites(prev => ({ ...prev, authors }));
+          } else {
+            setFavorites(prev => ({ ...prev, authors: [] }));
+          }
+          
+          if (savedJournals) {
+            const journals = JSON.parse(savedJournals);
+            setFavorites(prev => ({ ...prev, journals }));
+          } else {
+            setFavorites(prev => ({ ...prev, journals: [] }));
           }
         } catch (error) {
-          console.error('Error loading papers:', error);
+          console.error('Error loading favorites:', error);
         } finally {
           setLoading(false);
         }
       };
-      loadPapers();
+      loadFavorites();
     }, [])
   );
 
-  // Toggle star handler
+  // Toggle star handler for articles
   const toggleStar = async (id) => {
     try {
-      const updatedPapers = papers.map(paper =>
+      const updatedArticles = favorites.articles.map(paper =>
         paper.id === id ? { ...paper, starred: !paper.starred } : paper
       );
-      setPapers(updatedPapers.filter(paper => paper.starred));
+      setFavorites(prev => ({ ...prev, articles: updatedArticles.filter(paper => paper.starred) }));
       
       // Update in AsyncStorage
       const allPapers = await AsyncStorage.getItem('papers');
@@ -62,6 +85,34 @@ const FavoritesScreen = ({ navigation }) => {
       }
     } catch (error) {
       console.error('Error toggling star:', error);
+    }
+  };
+
+  // Toggle favorite for authors
+  const toggleAuthorFavorite = async (author) => {
+    try {
+      const updatedAuthors = favorites.authors.filter(a => a.id !== author.id);
+      if (updatedAuthors.length === favorites.authors.length) {
+        updatedAuthors.push(author);
+      }
+      setFavorites(prev => ({ ...prev, authors: updatedAuthors }));
+      await AsyncStorage.setItem('favorite_authors', JSON.stringify(updatedAuthors));
+    } catch (error) {
+      console.error('Error toggling author favorite:', error);
+    }
+  };
+
+  // Toggle favorite for journals
+  const toggleJournalFavorite = async (journal) => {
+    try {
+      const updatedJournals = favorites.journals.filter(j => j.id !== journal.id);
+      if (updatedJournals.length === favorites.journals.length) {
+        updatedJournals.push(journal);
+      }
+      setFavorites(prev => ({ ...prev, journals: updatedJournals }));
+      await AsyncStorage.setItem('favorite_journals', JSON.stringify(updatedJournals));
+    } catch (error) {
+      console.error('Error toggling journal favorite:', error);
     }
   };
 
@@ -89,11 +140,20 @@ const FavoritesScreen = ({ navigation }) => {
       const { uri } = await downloadResumable.downloadAsync();
       
       // Update the paper's localUri in the state
-      const updatedPapers = papers.map(paper => 
+      const updatedArticles = favorites.articles.map(paper => 
         paper.id === item.id ? { ...paper, localUri: uri } : paper
       );
-      setPapers(updatedPapers);
-      await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+      setFavorites(prev => ({ ...prev, articles: updatedArticles }));
+      
+      // Update in AsyncStorage
+      const allPapers = await AsyncStorage.getItem('papers');
+      if (allPapers) {
+        const parsedAllPapers = JSON.parse(allPapers);
+        const updatedAllPapers = parsedAllPapers.map(paper =>
+          paper.id === item.id ? { ...paper, localUri: uri } : paper
+        );
+        await AsyncStorage.setItem('papers', JSON.stringify(updatedAllPapers));
+      }
       
       Alert.alert('Success', 'PDF downloaded successfully!');
     } catch (error) {
@@ -129,11 +189,20 @@ const FavoritesScreen = ({ navigation }) => {
         uriToOpen = uri;
 
         // Update the paper's localUri in the state
-        const updatedPapers = papers.map(paper => 
+        const updatedArticles = favorites.articles.map(paper => 
           paper.id === item.id ? { ...paper, localUri: uri } : paper
         );
-        setPapers(updatedPapers);
-        await AsyncStorage.setItem('papers', JSON.stringify(updatedPapers));
+        setFavorites(prev => ({ ...prev, articles: updatedArticles }));
+        
+        // Update in AsyncStorage
+        const allPapers = await AsyncStorage.getItem('papers');
+        if (allPapers) {
+          const parsedAllPapers = JSON.parse(allPapers);
+          const updatedAllPapers = parsedAllPapers.map(paper =>
+            paper.id === item.id ? { ...paper, localUri: uri } : paper
+          );
+          await AsyncStorage.setItem('papers', JSON.stringify(updatedAllPapers));
+        }
       }
 
       navigation.navigate('PDFViewer', { uri: uriToOpen, title: item.title });
@@ -197,25 +266,157 @@ const FavoritesScreen = ({ navigation }) => {
     }
   };
 
-  // Filter papers based on search query and active filter
-  const getFilteredPapers = () => {
-    let filtered = papers;
+  // Handle item press based on type
+  const handleItemPress = (item, type) => {
+    switch (type) {
+      case 'article':
+        if (item.pdfUrl || item.localUri) {
+          handleOpenPDF(item);
+        } else {
+          navigation.navigate('PaperDetail', { paper: item });
+        }
+        break;
+      case 'author':
+        navigation.navigate('AuthorDetails', { author: item });
+        break;
+      case 'journal':
+        navigation.navigate('JournalDetails', { journal: item });
+        break;
+    }
+  };
+
+  // Filter and organize data for SectionList
+  const getFilteredSections = () => {
+    const sections = [];
     
-    // Apply search filter
-    if (searchQuery) {
+    // Filter based on search query
+    const filterByQuery = (items) => {
+      if (!searchQuery) return items;
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(paper =>
-        paper.title.toLowerCase().includes(query) ||
-        paper.authors.toLowerCase().includes(query)
+      return items.filter(item => 
+        (item.title || item.name || '').toLowerCase().includes(query) ||
+        (item.authors || '').toLowerCase().includes(query)
       );
+    };
+
+    // Add articles section if active
+    if (activeFilter === 'All' || activeFilter === 'Articles') {
+      const filteredArticles = filterByQuery(favorites.articles);
+      if (filteredArticles.length > 0) {
+        sections.push({
+          title: 'Articles',
+          data: filteredArticles,
+          type: 'article'
+        });
+      }
     }
-    
-    // Apply type filter
-    if (activeFilter !== 'All') {
-      filtered = filtered.filter(paper => paper.type === activeFilter);
+
+    // Add authors section if active
+    if (activeFilter === 'All' || activeFilter === 'Authors') {
+      const filteredAuthors = filterByQuery(favorites.authors);
+      if (filteredAuthors.length > 0) {
+        sections.push({
+          title: 'Authors',
+          data: filteredAuthors,
+          type: 'author'
+        });
+      }
     }
-    
-    return filtered;
+
+    // Add journals section if active
+    if (activeFilter === 'All' || activeFilter === 'Journals') {
+      const filteredJournals = filterByQuery(favorites.journals);
+      if (filteredJournals.length > 0) {
+        sections.push({
+          title: 'Journals',
+          data: filteredJournals,
+          type: 'journal'
+        });
+      }
+    }
+
+    return sections;
+  };
+
+  // Render section header
+  const renderSectionHeader = ({ section: { title, data } }) => {
+    if (data.length === 0) return null;
+    return (
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionCount}>{data.length}</Text>
+      </View>
+    );
+  };
+
+  // Render item based on type
+  const renderItem = ({ item, section }) => {
+    switch (section.type) {
+      case 'article':
+        return (
+          <TouchableOpacity 
+            onPress={() => handleItemPress(item, 'article')}
+            activeOpacity={0.7}
+          >
+            <PaperItem
+              item={item}
+              onPress={() => handleItemPress(item, 'article')}
+              onStar={() => toggleStar(item.id)}
+              onDownload={() => handleDownload(item)}
+              onMore={() => handleMore(item)}
+            />
+          </TouchableOpacity>
+        );
+      case 'author':
+        return (
+          <TouchableOpacity 
+            style={styles.authorCard}
+            onPress={() => handleItemPress(item, 'author')}
+            activeOpacity={0.7}
+          >
+            <Image source={{ uri: item.avatar }} style={styles.authorAvatar} />
+            <View style={styles.authorInfo}>
+              <Text style={styles.authorName}>{item.name}</Text>
+              <Text style={styles.authorAffiliation}>{item.affiliation}</Text>
+              <View style={styles.authorStats}>
+                <Text style={styles.authorStat}>{item.paperCount} papers</Text>
+                <Text style={styles.authorStat}>{item.citationCount} citations</Text>
+                <Text style={styles.authorStat}>h-index: {item.hIndex}</Text>
+              </View>
+            </View>
+            <TouchableOpacity 
+              style={styles.favoriteButton}
+              onPress={() => toggleAuthorFavorite(item)}
+            >
+              <Ionicons name="star" size={24} color="#FFD600" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        );
+      case 'journal':
+        return (
+          <TouchableOpacity 
+            style={styles.journalCard}
+            onPress={() => handleItemPress(item, 'journal')}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="book-open-variant" size={24} color={item.color || '#4f5ef7'} />
+            <View style={styles.journalInfo}>
+              <Text style={styles.journalName}>{item.name}</Text>
+              <Text style={styles.journalStats}>
+                {item.paperCount} papers • {item.citationCount} citations
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.favoriteButton}
+              onPress={() => toggleJournalFavorite(item)}
+            >
+              <Ionicons name="star" size={24} color="#FFD600" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        );
+      default:
+        return null;
+    }
   };
 
   if (loading) {
@@ -225,6 +426,8 @@ const FavoritesScreen = ({ navigation }) => {
       </View>
     );
   }
+
+  const sections = getFilteredSections();
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fafbfc' }}>
@@ -249,29 +452,32 @@ const FavoritesScreen = ({ navigation }) => {
             style={[styles.filterChip, activeFilter === filter.label && styles.filterChipActive]}
             onPress={() => setActiveFilter(filter.label)}
           >
+            <MaterialCommunityIcons 
+              name={filter.icon} 
+              size={18} 
+              color={activeFilter === filter.label ? '#fff' : '#888'} 
+              style={{ marginRight: 4 }} 
+            />
             <Text style={[styles.filterText, activeFilter === filter.label && styles.filterTextActive]}>
               {filter.label}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
-      <FlatList
-        data={getFilteredPapers()}
-        renderItem={({ item }) => (
-          <PaperItem
-            item={item}
-            onPress={() => handleOpenPDF(item)}
-            onStar={() => toggleStar(item.id)}
-            onDownload={() => handleDownload(item)}
-            onMore={() => handleMore(item)}
-          />
-        )}
+      <SectionList
+        sections={sections}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
         keyExtractor={item => item.id}
         contentContainerStyle={{ paddingBottom: 16 }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No favorite papers yet</Text>
-            <Text style={styles.emptySubText}>Star papers in your library to see them here</Text>
+            <Text style={styles.emptyText}>No favorites yet</Text>
+            <Text style={styles.emptySubText}>
+              {activeFilter === 'All' 
+                ? 'Star papers, authors, or journals to see them here'
+                : `No ${activeFilter.toLowerCase()} in your favorites`}
+            </Text>
           </View>
         }
       />
@@ -343,6 +549,94 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#fafbfc',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+  },
+  sectionCount: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+  },
+  authorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    marginHorizontal: 12,
+    marginVertical: 8,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  authorAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+  },
+  authorInfo: {
+    flex: 1,
+  },
+  authorName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 2,
+  },
+  authorAffiliation: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  authorStats: {
+    flexDirection: 'row',
+  },
+  authorStat: {
+    fontSize: 12,
+    color: '#888',
+    marginRight: 12,
+  },
+  journalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    marginHorizontal: 12,
+    marginVertical: 8,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  journalInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  journalName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 2,
+  },
+  journalStats: {
+    fontSize: 14,
+    color: '#666',
+  },
+  favoriteButton: {
+    padding: 8,
   },
 });
 

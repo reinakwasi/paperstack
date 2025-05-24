@@ -5,6 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import SearchResultCard from '../components/SearchResultCard';
+import { useFocusEffect } from '@react-navigation/native';
 
 const filters = [
   { label: 'All', icon: 'apps' },
@@ -59,8 +60,7 @@ const extractAuthors = (xml) => {
   return authors;
 };
 
-const SearchScreen = () => {
-  const navigation = useNavigation();
+const SearchScreen = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({
     articles: [],
@@ -75,6 +75,66 @@ const SearchScreen = () => {
   useEffect(() => {
     loadRecentSearches();
   }, []);
+
+  // Load favorite states when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadFavoriteStates = async () => {
+        try {
+          // Load favorite papers
+          const savedPapers = await AsyncStorage.getItem('papers');
+          if (savedPapers) {
+            const papers = JSON.parse(savedPapers);
+            const starredPaperIds = new Set(papers.filter(p => p.starred).map(p => p.id));
+            
+            // Update search results with starred state
+            setSearchResults(prev => ({
+              ...prev,
+              articles: prev.articles.map(article => ({
+                ...article,
+                starred: starredPaperIds.has(article.id)
+              }))
+            }));
+          }
+
+          // Load favorite authors
+          const savedAuthors = await AsyncStorage.getItem('favorite_authors');
+          if (savedAuthors) {
+            const authors = JSON.parse(savedAuthors);
+            const starredAuthorIds = new Set(authors.map(a => a.id));
+            
+            // Update search results with starred state
+            setSearchResults(prev => ({
+              ...prev,
+              authors: prev.authors.map(author => ({
+                ...author,
+                starred: starredAuthorIds.has(author.id)
+              }))
+            }));
+          }
+
+          // Load favorite journals
+          const savedJournals = await AsyncStorage.getItem('favorite_journals');
+          if (savedJournals) {
+            const journals = JSON.parse(savedJournals);
+            const starredJournalIds = new Set(journals.map(j => j.id));
+            
+            // Update search results with starred state
+            setSearchResults(prev => ({
+              ...prev,
+              journals: prev.journals.map(journal => ({
+                ...journal,
+                starred: starredJournalIds.has(journal.id)
+              }))
+            }));
+          }
+        } catch (error) {
+          console.error('Error loading favorite states:', error);
+        }
+      };
+      loadFavoriteStates();
+    }, [])
+  );
 
   const loadRecentSearches = async () => {
     try {
@@ -275,6 +335,41 @@ const SearchScreen = () => {
       results.authors = await searchAuthors(query);
       results.journals = await searchVenues(query);
 
+      // Load favorite states and update results
+      const savedPapers = await AsyncStorage.getItem('papers');
+      const savedAuthors = await AsyncStorage.getItem('favorite_authors');
+      const savedJournals = await AsyncStorage.getItem('favorite_journals');
+
+      // Update articles with starred state
+      if (savedPapers) {
+        const papers = JSON.parse(savedPapers);
+        const starredPaperIds = new Set(papers.filter(p => p.starred).map(p => p.id));
+        results.articles = results.articles.map(article => ({
+          ...article,
+          starred: starredPaperIds.has(article.id)
+        }));
+      }
+
+      // Update authors with starred state
+      if (savedAuthors) {
+        const authors = JSON.parse(savedAuthors);
+        const starredAuthorIds = new Set(authors.map(a => a.id));
+        results.authors = results.authors.map(author => ({
+          ...author,
+          starred: starredAuthorIds.has(author.id)
+        }));
+      }
+
+      // Update journals with starred state
+      if (savedJournals) {
+        const journals = JSON.parse(savedJournals);
+        const starredJournalIds = new Set(journals.map(j => j.id));
+        results.journals = results.journals.map(journal => ({
+          ...journal,
+          starred: starredJournalIds.has(journal.id)
+        }));
+      }
+
       setSearchResults(results);
       
       // Save to recent searches if we got results
@@ -324,6 +419,22 @@ const SearchScreen = () => {
     }
   };
 
+  // Handle star toggle
+  const handleStar = (item) => {
+    setSearchResults(prev => ({
+      ...prev,
+      articles: prev.articles.map(article => 
+        article.id === item.id ? { ...article, starred: !article.starred } : article
+      ),
+      authors: prev.authors.map(author => 
+        author.id === item.id ? { ...author, starred: !author.starred } : author
+      ),
+      journals: prev.journals.map(journal => 
+        journal.id === item.id ? { ...journal, starred: !journal.starred } : journal
+      )
+    }));
+  };
+
   const renderSectionHeader = ({ section: { title, data } }) => {
     if (data.length === 0) return null;
     return (
@@ -340,8 +451,15 @@ const SearchScreen = () => {
         title: 'Articles',
         data: searchResults.articles,
         renderItem: ({ item }) => (
-          <TouchableOpacity onPress={() => handleResultPress(item, 'article')}>
-            <SearchResultCard item={item} type="article" />
+          <TouchableOpacity
+            onPress={() => handleResultPress(item, 'article')}
+            activeOpacity={0.7}
+          >
+            <SearchResultCard
+              item={item}
+              type="article"
+              onStar={handleStar}
+            />
           </TouchableOpacity>
         )
       },
@@ -349,8 +467,15 @@ const SearchScreen = () => {
         title: 'Authors',
         data: searchResults.authors,
         renderItem: ({ item }) => (
-          <TouchableOpacity onPress={() => handleResultPress(item, 'author')}>
-            <SearchResultCard item={item} type="author" />
+          <TouchableOpacity
+            onPress={() => handleResultPress(item, 'author')}
+            activeOpacity={0.7}
+          >
+            <SearchResultCard
+              item={item}
+              type="author"
+              onStar={handleStar}
+            />
           </TouchableOpacity>
         )
       },
@@ -358,8 +483,15 @@ const SearchScreen = () => {
         title: 'Journals',
         data: searchResults.journals,
         renderItem: ({ item }) => (
-          <TouchableOpacity onPress={() => handleResultPress(item, 'journal')}>
-            <SearchResultCard item={item} type="journal" />
+          <TouchableOpacity
+            onPress={() => handleResultPress(item, 'journal')}
+            activeOpacity={0.7}
+          >
+            <SearchResultCard
+              item={item}
+              type="journal"
+              onStar={handleStar}
+            />
           </TouchableOpacity>
         )
       }
@@ -460,11 +592,28 @@ const SearchScreen = () => {
           ) : (
             <SectionList
               sections={getFilteredSections()}
-              renderItem={({ item }) => <SearchResultCard item={item} />}
+              renderItem={({ item, section }) => (
+                <TouchableOpacity
+                  onPress={() => handleResultPress(item, section.type)}
+                  activeOpacity={0.7}
+                >
+                  <SearchResultCard
+                    item={item}
+                    type={section.type}
+                    onStar={handleStar}
+                  />
+                </TouchableOpacity>
+              )}
               renderSectionHeader={renderSectionHeader}
               keyExtractor={item => item.id}
               contentContainerStyle={{ paddingBottom: 16 }}
               stickySectionHeadersEnabled={false}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No results found</Text>
+                  <Text style={styles.emptySubText}>Try adjusting your search query</Text>
+                </View>
+              }
             />
           )}
         </>
@@ -614,6 +763,20 @@ const styles = StyleSheet.create({
   },
   sectionCount: {
     fontSize: 13,
+    color: '#888',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#888',
+    marginBottom: 8,
+  },
+  emptySubText: {
     color: '#888',
   },
 });
