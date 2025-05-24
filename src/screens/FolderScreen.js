@@ -25,13 +25,10 @@ const FOLDER_COLORS = [
 
 const FolderScreen = ({ navigation }) => {
   const [myFolders, setMyFolders] = useState([]);
-  const [sharedFolders, setSharedFolders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[0]);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
 
   // Load folders when screen is focused
   useFocusEffect(
@@ -44,7 +41,6 @@ const FolderScreen = ({ navigation }) => {
     try {
       setLoading(true);
       const savedMyFolders = await AsyncStorage.getItem('my_folders');
-      const savedSharedFolders = await AsyncStorage.getItem('shared_folders');
       
       if (savedMyFolders) {
         setMyFolders(JSON.parse(savedMyFolders));
@@ -72,10 +68,6 @@ const FolderScreen = ({ navigation }) => {
         ];
         await AsyncStorage.setItem('my_folders', JSON.stringify(defaultFolders));
         setMyFolders(defaultFolders);
-      }
-
-      if (savedSharedFolders) {
-        setSharedFolders(JSON.parse(savedSharedFolders));
       }
     } catch (error) {
       console.error('Error loading folders:', error);
@@ -136,23 +128,6 @@ const FolderScreen = ({ navigation }) => {
         }
       ]
     );
-  };
-
-  const handleInvite = async () => {
-    if (!inviteEmail.trim()) {
-      Alert.alert('Error', 'Please enter an email address');
-      return;
-    }
-
-    try {
-      // Here you would typically make an API call to send the invitation
-      Alert.alert('Success', `Invitation sent to ${inviteEmail}`);
-      setShowInviteModal(false);
-      setInviteEmail('');
-    } catch (error) {
-      console.error('Error sending invitation:', error);
-      Alert.alert('Error', 'Failed to send invitation');
-    }
   };
 
   const formatDate = (dateString) => {
@@ -224,44 +199,6 @@ const FolderScreen = ({ navigation }) => {
     </Modal>
   );
 
-  const renderInviteModal = () => (
-    <Modal
-      visible={showInviteModal}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setShowInviteModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Invite Collaborator</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            value={inviteEmail}
-            onChangeText={setInviteEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoFocus
-          />
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => setShowInviteModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.createButton]}
-              onPress={handleInvite}
-            >
-              <Text style={styles.createButtonText}>Send Invite</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
   const renderSectionHeader = (title, actionButton) => (
     <View style={styles.sectionRow}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -269,79 +206,24 @@ const FolderScreen = ({ navigation }) => {
     </View>
   );
 
-  const renderItem = ({ item, section }) => {
-    if (section.title === 'MY FOLDERS') {
-      return (
-        <TouchableOpacity 
-          style={styles.folderCard}
-          onPress={() => navigation.navigate('FolderDetail', { folder: item })}
-          onLongPress={() => deleteFolder(item.id)}
-        >
-          <View style={[styles.folderIcon, { backgroundColor: item.color + '20' }]}>
-            <MaterialCommunityIcons name={item.icon} size={24} color={item.color} />
-          </View>
-          <View style={styles.folderInfo}>
-            <Text style={styles.folderName}>{item.name}</Text>
-            <Text style={styles.folderMeta}>
-              {item.count} papers • Updated {formatDate(item.updated)}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#bbb" />
-        </TouchableOpacity>
-      );
-    } else {
-      return (
-        <TouchableOpacity 
-          style={styles.folderCard}
-          onPress={() => navigation.navigate('FolderDetail', { folder: item })}
-        >
-          <View style={[styles.folderIcon, { backgroundColor: item.color + '20' }]}>
-            <MaterialCommunityIcons name={item.icon} size={24} color={item.color} />
-          </View>
-          <View style={styles.folderInfo}>
-            <Text style={styles.folderName}>{item.name}</Text>
-            <Text style={styles.folderMeta}>
-              {item.count} papers • Updated {formatDate(item.updated)}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#bbb" />
-        </TouchableOpacity>
-      );
-    }
-  };
-
-  const sections = [
-    {
-      title: 'MY FOLDERS',
-      data: myFolders,
-      renderItem: renderItem,
-      ListHeaderComponent: renderSectionHeader(
-        'MY FOLDERS',
-        <TouchableOpacity 
-          style={styles.newButton}
-          onPress={() => setShowNewFolderModal(true)}
-        >
-          <Ionicons name="add" size={16} color="#fff" />
-          <Text style={styles.newButtonText}>New</Text>
-        </TouchableOpacity>
-      )
-    },
-    {
-      title: 'SHARED WITH ME',
-      data: sharedFolders,
-      renderItem: renderItem,
-      ListHeaderComponent: renderSectionHeader(
-        'SHARED WITH ME',
-        <TouchableOpacity 
-          style={styles.inviteButton}
-          onPress={() => setShowInviteModal(true)}
-        >
-          <Ionicons name="person-add" size={16} color="#222" />
-          <Text style={styles.inviteButtonText}>Invite</Text>
-        </TouchableOpacity>
-      )
-    }
-  ];
+  const renderItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.folderCard}
+      onPress={() => navigation.navigate('FolderDetail', { folder: item })}
+      onLongPress={() => deleteFolder(item.id)}
+    >
+      <View style={[styles.folderIcon, { backgroundColor: item.color + '20' }]}>
+        <MaterialCommunityIcons name={item.icon} size={24} color={item.color} />
+      </View>
+      <View style={styles.folderInfo}>
+        <Text style={styles.folderName}>{item.name}</Text>
+        <Text style={styles.folderMeta}>
+          {item.count} papers • Updated {formatDate(item.updated)}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color="#bbb" />
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
@@ -369,11 +251,14 @@ const FolderScreen = ({ navigation }) => {
         </View>
       </View>
 
-      <SectionList
-        sections={sections}
+      <FlatList
+        data={myFolders}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        renderSectionHeader={({ section }) => section.ListHeaderComponent}
+        ListHeaderComponent={renderSectionHeader(
+          'MY FOLDERS',
+          null
+        )}
         contentContainerStyle={{ paddingBottom: 80 }}
       />
 
@@ -387,7 +272,6 @@ const FolderScreen = ({ navigation }) => {
 
       {/* Modals */}
       {renderNewFolderModal()}
-      {renderInviteModal()}
     </View>
   );
 };
@@ -433,20 +317,6 @@ const styles = StyleSheet.create({
   },
   newButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
-    marginLeft: 4,
-    fontSize: 13,
-  },
-  inviteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f2f2f2',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  inviteButtonText: {
-    color: '#222',
     fontWeight: 'bold',
     marginLeft: 4,
     fontSize: 13,
