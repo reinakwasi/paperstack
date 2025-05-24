@@ -12,32 +12,89 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PaperItem from '../components/PaperItem';
+import ShareFolderModal from '../components/ShareFolderModal';
 import { useRoute, useNavigation } from '@react-navigation/native';
 
 const FolderDetail = () => {
   const route = useRoute();
   const navigation = useNavigation();
-  const { folder } = route.params;
-  
+  const { folder: initialFolder, selectedPapers, fromLibrary } = route.params || {};
+  const [folder, setFolder] = useState(initialFolder);
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+
+  // Load folder data if not provided
+  useEffect(() => {
+    const loadFolderData = async () => {
+      if (!folder || !folder.id) {
+        try {
+          console.log('Loading folder data from storage...');
+          const savedFolders = await AsyncStorage.getItem('my_folders');
+          if (savedFolders) {
+            const folders = JSON.parse(savedFolders);
+            console.log('Available folders:', folders);
+            const currentFolder = folders.find(f => f.id === route.params?.folder?.id);
+            if (currentFolder) {
+              console.log('Found folder:', currentFolder);
+              setFolder(currentFolder);
+            } else {
+              console.error('Folder not found in storage:', route.params?.folder?.id);
+              Alert.alert('Error', 'Folder not found. Please try again.');
+              navigation.goBack();
+            }
+          } else {
+            console.error('No folders found in storage');
+            Alert.alert('Error', 'No folders found. Please create a folder first.');
+            navigation.goBack();
+          }
+        } catch (error) {
+          console.error('Error loading folder:', error);
+          Alert.alert('Error', 'Failed to load folder data. Please try again.');
+          navigation.goBack();
+        }
+      } else {
+        console.log('Using provided folder data:', folder);
+      }
+    };
+    loadFolderData();
+  }, [route.params?.folder?.id]);
 
   useEffect(() => {
-    loadPapers();
-  }, []);
+    if (folder && folder.id) {
+      console.log('Loading papers for folder:', folder.id);
+      loadPapers();
+    }
+  }, [folder]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      const selectedPaper = route.params?.selectedPaper;
-      if (selectedPaper) {
-        handleAddPaper(selectedPaper);
-        navigation.setParams({ selectedPaper: undefined });
+      if (selectedPapers && selectedPapers.length > 0 && folder && folder.id) {
+        // Process all papers at once
+        const addPapers = async () => {
+          try {
+            for (const paper of selectedPapers) {
+              if (paper && paper.id && !papers.some(p => p.id === paper.id)) {
+                await handleAddPaper(paper);
+              }
+            }
+            // Only clear selection if we came from library
+            if (fromLibrary) {
+              navigation.setParams({ selectedPapers: undefined });
+            }
+          } catch (error) {
+            console.error('Error adding papers:', error);
+            Alert.alert('Error', 'Failed to add some papers to the folder');
+          }
+        };
+        
+        addPapers();
       }
     });
 
     return unsubscribe;
-  }, [navigation, route.params]);
+  }, [navigation, route.params, folder]);
 
   const loadPapers = async () => {
     try {
@@ -61,15 +118,28 @@ const FolderDetail = () => {
   };
 
   const handleAddPaper = async (paper) => {
+    if (!folder || !folder.id) {
+      console.error('No folder data available');
+      return;
+    }
+
     try {
-      if (papers.some(p => p.id === paper.id)) {
-        Alert.alert('Info', 'This paper is already in the folder');
+      if (!paper || !paper.id) {
+        console.log('Invalid paper:', paper);
         return;
       }
 
-      const updatedPapers = [...papers, paper];
-      setPapers(updatedPapers);
+      if (papers.some(p => p.id === paper.id)) {
+        console.log('Paper already in folder:', paper.id);
+        return;
+      }
 
+      console.log('Adding paper to folder:', paper.id);
+      
+      // Update local state
+      setPapers(prevPapers => [...prevPapers, paper]);
+
+      // Update AsyncStorage
       const savedPapers = await AsyncStorage.getItem('papers');
       if (savedPapers) {
         const allPapers = JSON.parse(savedPapers);
@@ -79,6 +149,7 @@ const FolderDetail = () => {
         await AsyncStorage.setItem('papers', JSON.stringify(updatedAllPapers));
       }
 
+      // Update folder count
       const savedFolders = await AsyncStorage.getItem('my_folders');
       if (savedFolders) {
         const folders = JSON.parse(savedFolders);
@@ -86,10 +157,12 @@ const FolderDetail = () => {
           f.id === folder.id ? { ...f, count: f.count + 1 } : f
         );
         await AsyncStorage.setItem('my_folders', JSON.stringify(updatedFolders));
+        // Update local folder state
+        setFolder(prev => ({ ...prev, count: prev.count + 1 }));
       }
     } catch (error) {
       console.error('Error adding paper to folder:', error);
-      Alert.alert('Error', 'Failed to add paper to folder');
+      throw error;
     }
   };
 
@@ -165,13 +238,32 @@ const FolderDetail = () => {
           />
           <Text style={styles.headerTitle}>{folder.name}</Text>
         </View>
-        <TouchableOpacity onPress={() => navigation.navigate('Library', { 
-          onSelect: (paper) => {
-            navigation.setParams({ selectedPaper: paper });
-          }
-        })}>
-          <Ionicons name="add" size={24} color="#222" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => setShareModalVisible(true)}
+          >
+            <Ionicons name="share-outline" size={24} color="#222" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('Library', { 
+              onSelect: (papers) => {
+                if (Array.isArray(papers)) {
+                  papers.forEach(paper => {
+                    navigation.setParams({ selectedPaper: paper });
+                  });
+                } else {
+                  navigation.setParams({ selectedPaper: papers });
+                }
+              },
+              multiSelect: true,
+              folder: folder
+            })}
+          >
+            <Ionicons name="add" size={24} color="#222" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search Bar */}
@@ -223,6 +315,12 @@ const FolderDetail = () => {
             </Text>
           </View>
         }
+      />
+
+      <ShareFolderModal
+        visible={shareModalVisible}
+        onClose={() => setShareModalVisible(false)}
+        folder={folder}
       />
     </View>
   );
@@ -294,6 +392,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    marginLeft: 16,
   },
 });
 

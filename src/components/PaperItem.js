@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected }) => {
+const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected, showCheckbox }) => {
   const handleDownload = () => {
     if (!item.pdfUrl) {
       Alert.alert('Error', 'No PDF available for this paper.');
@@ -29,9 +29,16 @@ const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected }) =>
         onPress={handlePress}
       >
         <View style={styles.leftContent}>
-          {isSelected && (
-            <View style={styles.checkmarkContainer}>
-              <Ionicons name="checkmark-circle" size={24} color="#4f5ef7" />
+          {showCheckbox && (
+            <View style={styles.checkboxContainer}>
+              <View style={[
+                styles.checkbox,
+                isSelected && styles.checkboxSelected
+              ]}>
+                {isSelected && (
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                )}
+              </View>
             </View>
           )}
           <View style={styles.textContainer}>
@@ -47,18 +54,18 @@ const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected }) =>
           </View>
         </View>
         <View style={styles.actions}>
-          <TouchableOpacity onPress={() => onStar(item.id)} style={styles.actionButton}>
+          <TouchableOpacity onPress={() => onStar(item.id)}>
             <Ionicons 
               name={item.starred ? "star" : "star-outline"} 
               size={20} 
-              color={item.starred ? "#FFD700" : "#666"} 
+              color={item.starred ? "#ffd700" : "#bbb"} 
             />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleDownload} style={styles.actionButton}>
-            <Ionicons name="download-outline" size={20} color="#666" />
+          <TouchableOpacity onPress={handleDownload}>
+            <Ionicons name="download-outline" size={20} color="#4f5ef7" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => onMore(item)} style={styles.actionButton}>
-            <Ionicons name="ellipsis-vertical" size={20} color="#666" />
+          <TouchableOpacity onPress={() => onMore(item)}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#bbb" />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -69,56 +76,63 @@ const PaperItem = ({ item, onPress, onStar, onDownload, onMore, isSelected }) =>
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 12,
     marginHorizontal: 16,
-    marginVertical: 6,
+    marginVertical: 4,
+    borderRadius: 12,
     shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   selectedContainer: {
-    backgroundColor: '#f0f2ff',
-    borderColor: '#4f5ef7',
-    borderWidth: 1,
+    backgroundColor: '#f0f4ff',
   },
   content: {
     flexDirection: 'row',
     padding: 16,
+    alignItems: 'center',
   },
   leftContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  checkmarkContainer: {
+  checkboxContainer: {
     marginRight: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#4f5ef7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#4f5ef7',
   },
   textContainer: {
     flex: 1,
   },
   title: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#222',
     marginBottom: 4,
   },
   authors: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#666',
     marginBottom: 2,
   },
   journal: {
     fontSize: 12,
-    color: '#888',
+    color: '#999',
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 4,
   },
 });
 

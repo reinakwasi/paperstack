@@ -10,7 +10,7 @@ import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/nativ
 const LibraryScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
-  const { onSelect } = route.params || {};
+  const { onSelect, multiSelect, folder } = route.params || {};
   
   const [activeFilter, setActiveFilter] = useState('recent');
   const [papers, setPapers] = useState([]);
@@ -21,7 +21,7 @@ const LibraryScreen = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPapers, setSelectedPapers] = useState([]);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(multiSelect || false);
 
   const filters = [
     { label: 'All' },
@@ -70,6 +70,15 @@ const LibraryScreen = () => {
       savePapers();
     }
   }, [papers]);
+
+  // Add effect to validate folder data
+  useEffect(() => {
+    if (multiSelect && (!folder || !folder.id)) {
+      console.error('No folder data provided for multi-select mode');
+      Alert.alert('Error', 'Invalid folder data. Please try again.');
+      navigation.goBack();
+    }
+  }, [multiSelect, folder]);
 
   // Filtering logic
   const getFilteredPapers = () => {
@@ -259,12 +268,37 @@ const LibraryScreen = () => {
     setMoveModalVisible(false);
   };
 
+  const handleDone = () => {
+    if (selectedPapers.length > 0) {
+      console.log('Selected papers before navigation:', selectedPapers);
+      console.log('Folder data:', folder);
+      if (!folder || !folder.id) {
+        Alert.alert('Error', 'Invalid folder data');
+        return;
+      }
+      navigation.navigate('FolderDetail', {
+        selectedPapers: selectedPapers,
+        folder: folder,
+        fromLibrary: true
+      });
+    } else {
+      Alert.alert('Info', 'Please select at least one paper');
+    }
+  };
+
   const handlePaperPress = (paper) => {
     if (isSelectionMode) {
       togglePaperSelection(paper);
     } else if (onSelect) {
-      onSelect(paper);
-      navigation.goBack();
+      if (!folder || !folder.id) {
+        Alert.alert('Error', 'Invalid folder data');
+        return;
+      }
+      navigation.navigate('FolderDetail', {
+        selectedPapers: [paper],
+        folder: folder,
+        fromLibrary: true
+      });
     } else {
       handleOpenPDF(paper);
     }
@@ -279,15 +313,6 @@ const LibraryScreen = () => {
         return [...prev, paper];
       }
     });
-  };
-
-  const handleDone = () => {
-    if (selectedPapers.length > 0) {
-      selectedPapers.forEach(paper => onSelect(paper));
-      navigation.goBack();
-    } else {
-      Alert.alert('Info', 'Please select at least one paper');
-    }
   };
 
   const filteredPapers = papers.filter(paper =>
@@ -319,13 +344,22 @@ const LibraryScreen = () => {
       <Header />
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>My Library</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddPaper')}
-        >
-          <Ionicons name="add" size={18} color="#4f5ef7" />
-          <Text style={styles.addButtonText}>Add Paper</Text>
-        </TouchableOpacity>
+        {isSelectionMode ? (
+          <TouchableOpacity
+            style={styles.doneButton}
+            onPress={handleDone}
+          >
+            <Text style={styles.doneButtonText}>Done ({selectedPapers.length})</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => navigation.navigate('AddPaper')}
+          >
+            <Ionicons name="add" size={18} color="#4f5ef7" />
+            <Text style={styles.addButtonText}>Add Paper</Text>
+          </TouchableOpacity>
+        )}
       </View>
       <View style={styles.filterContainer}>
         {renderFilterButton('recent', 'Recent')}
@@ -361,6 +395,7 @@ const LibraryScreen = () => {
               onDownload={() => handleDownload(item)}
               onMore={() => handleMore(item)}
               isSelected={isSelectionMode && selectedPapers.some(p => p.id === item.id)}
+              showCheckbox={isSelectionMode}
             />
           </TouchableOpacity>
         )}
@@ -592,6 +627,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  doneButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e7eaff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  doneButtonText: {
+    color: '#4f5ef7',
+    fontWeight: 'bold',
+    marginLeft: 4,
+    fontSize: 14,
   },
 });
 
