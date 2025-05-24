@@ -49,6 +49,8 @@ const ProfileScreen = ({ navigation }) => {
               onPress={() => {
                 if (item.label === 'About PaperStack') {
                   navigation.navigate('About');
+                } else if (item.label === 'Help & Support') {
+                  navigation.navigate('HelpSupport');
                 }
               }}
             >

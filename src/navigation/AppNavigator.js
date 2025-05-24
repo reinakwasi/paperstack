@@ -9,6 +9,7 @@ import JournalDetails from '../screens/JournalDetails';
 import FolderDetail from '../screens/FolderDetail';
 import LibraryScreen from '../screens/LibraryScreen';
 import AboutScreen from '../screens/AboutScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -33,6 +34,11 @@ export default function AppNavigator() {
       <Stack.Screen 
         name="About" 
         component={AboutScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="HelpSupport" 
+        component={HelpSupportScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>
