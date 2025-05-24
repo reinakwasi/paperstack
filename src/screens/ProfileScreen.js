@@ -51,6 +51,8 @@ const ProfileScreen = ({ navigation }) => {
                   navigation.navigate('About');
                 } else if (item.label === 'Help & Support') {
                   navigation.navigate('HelpSupport');
+                } else if (item.label === 'Notifications') {
+                  navigation.navigate('NotificationSettings');
                 }
               }}
             >
